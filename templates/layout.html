@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>{% block title %}{% endblock %} - 画像ビューワー</title>
+    <!-- ここに基本的なCSSやJSのリンクを将来追加 -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <header>
+        <nav>
+            <ul>
+                <li><a href="{{ url_for('index') }}">トップ</a></li>
+                <!-- 将来的にギャラリー、スライドショー、アップロードへのリンクを追加 -->
+                 <li><a href="#">ギャラリー(未実装)</a></li>
+                 <li><a href="#">スライドショー(未実装)</a></li>
+                 <li><a href="#">アップロード(未実装)</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        {% block content %}
+        <!-- ここに各ページのコンテンツが表示される -->
+        {% endblock %}
+    </main>
+
+    <footer>
+        <p>© 2023 画像ビューワー</p>
+    </footer>
+
+    <!-- ここに基本的なJavaScriptファイルを将来追加 -->
+    <!-- <script src="{{ url_for('static', filename='js/main.js') }}"></script> -->
+</body>
+</html>
