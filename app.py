@@ -26,8 +26,7 @@ def index():
     トップページ（将来的にギャラリーページへのリダイレクトまたは直接表示）
     現時点ではシンプルな挨拶を表示
     """
-    # return render_template('index.html', title='ようこそ')
-    return "<h1>Flask アプリケーション基盤</h1><p>ようこそ！</p>" # ← まずはテンプレートなしで表示確認
+    return render_template('index.html', title='ようこそ')
 
 @app.route('/images')
 def image_list():
