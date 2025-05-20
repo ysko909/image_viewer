@@ -1,0 +1,9 @@
+{% extends 'layout.html' %}
+
+{% block title %}画像表示{% endblock %}
+
+{% block content %}
+    <h1>画像表示</h1>
+    <img src="{{ url_for('static', filename='img/' + filename) }}" alt="{{ filename }}">
+    <p><a href="{{ url_for('image_list') }}">一覧に戻る</a></p>
+{% endblock %}

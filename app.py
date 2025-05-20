@@ -1,6 +1,6 @@
 # image_viewer/app.py
 import os
-from flask import Flask, render_template, url_for
+from flask import Flask, render_template, url_for, abort
 
 # Flaskアプリケーションインスタンスを作成
 # instance_relative_config=True にすると、インスタンスフォルダから設定を読み込める（今回は使わないが一般的な設定）
@@ -28,6 +28,41 @@ def index():
     """
     # return render_template('index.html', title='ようこそ')
     return "<h1>Flask アプリケーション基盤</h1><p>ようこそ！</p>" # ← まずはテンプレートなしで表示確認
+
+@app.route('/images')
+def image_list():
+    """
+    画像ファイル一覧を表示するページ
+    """
+    img_dir = app.config['UPLOAD_FOLDER'] # app/static/img フォルダのパス
+    allowed_extensions = app.config['ALLOWED_EXTENSIONS']
+    
+    # ディレクトリ内のファイル一覧を取得し、許可された拡張子のファイルのみをフィルタリング
+    image_files = []
+    try:
+        for filename in os.listdir(img_dir):
+            if '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions:
+                image_files.append(filename)
+    except FileNotFoundError:
+        # ディレクトリが存在しない場合は空のリストを渡す
+        pass
+
+    # ファイル名をソート（任意）
+    image_files.sort()
+
+    # テンプレートにファイルリストを渡してレンダリング
+    return render_template('image_list.html', image_files=image_files, title='画像ファイル一覧')
+
+@app.route('/image/<filename>')
+def image_display(filename):
+    """
+    単一の画像ファイルを表示するページ
+    """
+    img_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    if not os.path.exists(img_path):
+        abort(404) # ファイルが存在しない場合は404エラーを返す
+
+    return render_template('image_display.html', filename=filename)
 
 # --- エラーハンドリングなど（将来追加） ---
 

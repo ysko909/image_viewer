@@ -1,0 +1,16 @@
+{% extends 'layout.html' %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+    <h1>{{ title }}</h1>
+    {% if image_files %}
+        <ul>
+            {% for filename in image_files %}
+                <li><a href="{{ url_for('image_display', filename=filename) }}">{{ filename }}</a></li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>画像ファイルが見つかりませんでした。</p>
+    {% endif %}
+{% endblock %}

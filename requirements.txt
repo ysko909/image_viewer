@@ -1,3 +1,4 @@
 # image_viewer/requirements.txt
 flask>=3.0.0,<3.1.0
 Pillow>=10.1.0,<11.0.0
+pytest>=8.0.0,<9.0.0
