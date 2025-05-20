@@ -1,0 +1,12 @@
+{% extends 'layout.html' %}
+
+{% block title %}スライドショー設定{% endblock %}
+
+{% block content %}
+<h2>スライドショー表示時間設定</h2>
+<form action="{{ url_for('save_slideshow_config') }}" method="post">
+    <label for="duration">表示時間 (ミリ秒):</label>
+    <input type="number" id="duration" name="duration" value="{{ current_duration }}" required min="500">
+    <button type="submit">保存</button>
+</form>
+{% endblock %}
