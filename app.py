@@ -1,6 +1,6 @@
 # image_viewer/app.py
 import os
-from flask import Flask, render_template, url_for, abort
+from flask import Flask, render_template, url_for, abort, redirect
 
 # Flaskアプリケーションインスタンスを作成
 # instance_relative_config=True にすると、インスタンスフォルダから設定を読み込める（今回は使わないが一般的な設定）
@@ -26,10 +26,9 @@ app.config.setdefault('THUMBNAIL_SIZE', (128, 128)) # サムネイルの最大�
 @app.route('/')
 def index():
     """
-    トップページ（将来的にギャラリーページへのリダイレクトまたは直接表示）
-    現時点ではシンプルな挨拶を表示
+    トップページを画像一覧ページにリダイレクト
     """
-    return render_template('index.html', title='ようこそ')
+    return redirect(url_for('image_list'))
 
 @app.route('/images')
 def image_list():
