@@ -1,5 +1,6 @@
 # image_viewer/app.py
 import os
+import random
 from flask import Flask, render_template, url_for, abort, redirect
 
 # Flaskアプリケーションインスタンスを作成
@@ -7,11 +8,19 @@ from flask import Flask, render_template, url_for, abort, redirect
 app = Flask(__name__, instance_relative_config=True)
 
 # --- 設定 ---
+# flash()機能など、セッション管理のためにSECRET_KEYを設定する
+# 本番環境では、環境変数などから読み込むべき、より複雑なキーを使用してください
+app.config['SECRET_KEY'] = os.urandom(24)
+
 # config.py から設定を読み込む (ファイルが存在しなくてもエラーにならないように silent=True)
 app.config.from_pyfile('config.py', silent=True)
 
 # スライドショーのデフォルト表示時間 (ミリ秒)
 app.config.setdefault('SLIDESHOW_DURATION', 3000)
+# スライドショーのループ設定 (デフォルトは有効)
+app.config.setdefault('SLIDESHOW_LOOP', True)
+# スライドショーのシャッフル設定 (デフォルトは無効)
+app.config.setdefault('SLIDESHOW_SHUFFLE', False)
 
 # アップロードフォルダやサムネイルフォルダのパスを設定（デフォルト値）
 # config.py で上書き可能
@@ -90,13 +99,28 @@ def slideshow(filename):
     if filename not in image_files:
         abort(404)
 
+    # シャッフルが有効な場合、リストを並べ替える
+    if app.config.get('SLIDESHOW_SHUFFLE', False):
+        # 開始画像をリストの先頭に保持したまま、残りをシャッフルする
+        start_image = filename
+        image_files.remove(start_image)
+        random.shuffle(image_files)
+        image_files.insert(0, start_image)
+
     # 開始ファイル名のインデックスを取得
     start_index = image_files.index(filename)
 
-    # テンプレートにファイルリストと開始インデックスを渡してレンダリング
-    # スライドショー表示時間を設定から取得してテンプレートに渡す
-    slideshow_duration = app.config.get('SLIDESHOW_DURATION', 3000) # デフォルトは3000ms
-    return render_template('slideshow.html', image_files=image_files, start_index=start_index, title='スライドショー', slideshow_duration=slideshow_duration)
+    # スライドショー表示時間とループ設定を取得してテンプレートに渡す
+    slideshow_duration = app.config.get('SLIDESHOW_DURATION', 3000)
+    slideshow_loop = app.config.get('SLIDESHOW_LOOP', True)
+    return render_template(
+        'slideshow.html', 
+        image_files=image_files, 
+        start_index=start_index, 
+        title='スライドショー', 
+        slideshow_duration=slideshow_duration,
+        slideshow_loop=slideshow_loop
+    )
 
 @app.route('/slideshow/config', methods=['GET'])
 def slideshow_config():
@@ -104,7 +128,15 @@ def slideshow_config():
     スライドショー設定ページを表示する
     """
     current_duration = app.config.get('SLIDESHOW_DURATION', 3000)
-    return render_template('slideshow_config.html', title='スライドショー設定', current_duration=current_duration)
+    current_loop_enabled = app.config.get('SLIDESHOW_LOOP', True)
+    current_shuffle_enabled = app.config.get('SLIDESHOW_SHUFFLE', False)
+    return render_template(
+        'slideshow_config.html', 
+        title='スライドショー設定', 
+        current_duration=current_duration, 
+        current_loop_enabled=current_loop_enabled,
+        current_shuffle_enabled=current_shuffle_enabled
+    )
 
 @app.route('/slideshow/config/save', methods=['POST'])
 def save_slideshow_config():
@@ -112,15 +144,27 @@ def save_slideshow_config():
     スライドショー設定を保存する
     """
     from flask import request, redirect, url_for, flash
+    
+    # 表示時間の設定
     try:
-        duration = int(request.form['duration'])
+        duration = int(request.form.get('duration', 3000))
         if duration < 500: # 最小値を設定
             flash('表示時間は500ミリ秒以上にしてください。', 'warning')
         else:
             app.config['SLIDESHOW_DURATION'] = duration
             flash('スライドショー表示時間を保存しました。', 'success')
-    except ValueError:
+    except (ValueError, TypeError):
         flash('無効な数値が入力されました。', 'danger')
+
+    # ループ設定の保存
+    loop_enabled = 'loop_enabled' in request.form
+    app.config['SLIDESHOW_LOOP'] = loop_enabled
+
+    # シャッフル設定の保存
+    shuffle_enabled = 'shuffle_enabled' in request.form
+    app.config['SLIDESHOW_SHUFFLE'] = shuffle_enabled
+
+    flash('設定を保存しました。', 'success')
     
     return redirect(url_for('slideshow_config'))
 

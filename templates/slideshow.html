@@ -30,6 +30,7 @@
     "image_files": image_files,
     "start_index": start_index,
     "duration": slideshow_duration,
+    "loop": slideshow_loop,
     "base_img_url": url_for('static', filename='img/')
 } | tojson }}
 </script>
@@ -43,7 +44,7 @@
 
     // --- データ取得と初期化 ---
     const data = JSON.parse(document.getElementById('slideshow-data').textContent);
-    const { image_files, start_index, duration, base_img_url } = data;
+    const { image_files, start_index, duration, loop, base_img_url } = data;
     let currentIndex = start_index;
     let timer = null; // setIntervalのIDを保持
     let isPlaying = true;
@@ -71,7 +72,19 @@
      * スライドショーを次の画像に進める
      */
     function nextImage() {
-        currentIndex = (currentIndex + 1) % image_files.length;
+        let nextIndex = currentIndex + 1;
+
+        if (nextIndex >= image_files.length) {
+            if (loop) {
+                nextIndex = 0; // ループが有効なら最初に戻る
+            } else {
+                stopSlideshow(); // ループが無効なら停止
+                // オプション：一覧ページに戻る
+                // window.location.href = "{{ url_for('image_list') }}";
+                return; // 処理を終了
+            }
+        }
+        currentIndex = nextIndex;
         showImage(currentIndex);
     }
 

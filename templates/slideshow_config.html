@@ -1,12 +1,36 @@
 {% extends 'layout.html' %}
 
-{% block title %}スライドショー設定{% endblock %}
+{% block title %}{{ title }}{% endblock %}
 
 {% block content %}
-<h2>スライドショー表示時間設定</h2>
-<form action="{{ url_for('save_slideshow_config') }}" method="post">
-    <label for="duration">表示時間 (ミリ秒):</label>
-    <input type="number" id="duration" name="duration" value="{{ current_duration }}" required min="500">
-    <button type="submit">保存</button>
-</form>
+<div class="col-md-8 col-lg-6 mx-auto">
+    <h2 class="mb-4">{{ title }}</h2>
+    <div class="card">
+        <div class="card-body">
+            <form action="{{ url_for('save_slideshow_config') }}" method="post">
+                <div class="mb-3">
+                    <label for="duration" class="form-label">表示時間 (ミリ秒)</label>
+                    <input type="number" id="duration" name="duration" value="{{ current_duration }}" required min="500" class="form-control">
+                    <div class="form-text">スライドが切り替わるまでの時間をミリ秒単位で指定します (500以上)。</div>
+                </div>
+
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="loop_enabled" name="loop_enabled" {% if current_loop_enabled %}checked{% endif %}>
+                    <label class="form-check-label" for="loop_enabled">
+                        スライドショーをループさせる
+                    </label>
+                </div>
+
+                <div class="form-check mb-4">
+                    <input class="form-check-input" type="checkbox" id="shuffle_enabled" name="shuffle_enabled" {% if current_shuffle_enabled %}checked{% endif %}>
+                    <label class="form-check-label" for="shuffle_enabled">
+                        スライドショーをシャッフルする
+                    </label>
+                </div>
+
+                <button type="submit" class="btn btn-primary">設定を保存</button>
+            </form>
+        </div>
+    </div>
+</div>
 {% endblock %}
