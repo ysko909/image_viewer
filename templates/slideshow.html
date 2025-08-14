@@ -3,42 +3,177 @@
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
-<div class="slideshow-container">
-    <img id="slideshow-image" src="" alt="Slideshow Image" style="max-width: 100%; max-height: 80vh;">
+<div class="container text-center mt-4">
+    <h2 id="filename-display" class="mb-3"></h2>
+
+    <div class="slideshow-container position-relative d-inline-block">
+        {# 画像表示エリア #}
+        <a id="image-link" href="">
+            <img id="slideshow-image" src="" alt="Slideshow Image" class="img-fluid" style="max-height: 75vh; border-radius: 8px;">
+        </a>
+
+        {# 前へボタン #}
+        <a class="prev" onclick="plusSlides(-1)">&#10094;</a>
+        {# 次へボタン #}
+        <a class="next" onclick="plusSlides(1)">&#10095;</a>
+    </div>
+
+    <div class="mt-3">
+        <button id="toggle-play" class="btn btn-secondary">一時停止</button>
+        <a href="{{ url_for('image_list') }}" class="btn btn-primary">一覧に戻る</a>
+    </div>
 </div>
 
+{# スライドショーのデータをJSONとして埋め込む #}
 <script id="slideshow-data" type="application/json">
-{{ { 'image_files': image_files, 'start_index': start_index, 'slideshow_duration': slideshow_duration } | tojson }}
+{{ {
+    "image_files": image_files,
+    "start_index": start_index,
+    "duration": slideshow_duration,
+    "base_img_url": url_for('static', filename='img/')
+} | tojson }}
 </script>
 
 <script>
-    const slideshowData = JSON.parse(document.getElementById('slideshow-data').textContent);
-    const imageFiles = slideshowData.image_files;
-    let currentIndex = slideshowData.start_index;
-    const slideshowImage = document.getElementById('slideshow-image');
-    const displayDuration = slideshowData.slideshow_duration;
+    // --- DOM要素の取得 ---
+    const imageElement = document.getElementById('slideshow-image');
+    const filenameDisplay = document.getElementById('filename-display');
+    const imageLink = document.getElementById('image-link');
+    const toggleButton = document.getElementById('toggle-play');
 
-    function displayImage(index) {
-        if (index >= 0 && index < imageFiles.length) {
-            const filename = imageFiles[index];
-            slideshowImage.src = "{{ url_for('static', filename='img/') }}" + filename;
+    // --- データ取得と初期化 ---
+    const data = JSON.parse(document.getElementById('slideshow-data').textContent);
+    const { image_files, start_index, duration, base_img_url } = data;
+    let currentIndex = start_index;
+    let timer = null; // setIntervalのIDを保持
+    let isPlaying = true;
+
+    // --- 関数定義 ---
+
+    /**
+     * 指定されたインデックスの画像を表示する
+     * @param {number} index - 表示する画像のインデックス
+     */
+    function showImage(index) {
+        if (index < 0 || index >= image_files.length) {
+            console.error('Invalid image index:', index);
+            return;
         }
+        const filename = image_files[index];
+        imageElement.src = `${base_img_url}${filename}`;
+        imageElement.alt = filename;
+        filenameDisplay.textContent = filename;
+        // 画像クリックでその画像の表示ページに飛ぶようにリンクを更新
+        imageLink.href = `/image/${filename}`;
     }
 
+    /**
+     * スライドショーを次の画像に進める
+     */
     function nextImage() {
-        currentIndex++;
-        if (currentIndex < imageFiles.length) {
-            displayImage(currentIndex);
-            setTimeout(nextImage, displayDuration);
-        } else {
-            // End of slideshow, redirect to image list
-            window.location.href = "{{ url_for('image_list') }}";
+        currentIndex = (currentIndex + 1) % image_files.length;
+        showImage(currentIndex);
+    }
+
+    /**
+     * スライドショーを開始する
+     */
+    function startSlideshow() {
+        if (timer === null) {
+            timer = setInterval(nextImage, duration);
+            isPlaying = true;
+            toggleButton.textContent = '一時停止';
         }
     }
 
-    // Start slideshow
-    displayImage(currentIndex);
-    setTimeout(nextImage, displayDuration);
+    /**
+     * スライドショーを停止する
+     */
+    function stopSlideshow() {
+        clearInterval(timer);
+        timer = null;
+        isPlaying = false;
+        toggleButton.textContent = '再生';
+    }
+
+    /**
+     * 再生/一時停止を切り替える
+     */
+    function togglePlay() {
+        if (isPlaying) {
+            stopSlideshow();
+        } else {
+            startSlideshow();
+        }
+    }
+
+    /**
+     * 手動でスライドを移動する (n=1で次、n=-1で前)
+     * @param {number} n
+     */
+    function plusSlides(n) {
+        // スライドショーが動いている場合は一度停止して、操作後に再度開始する
+        const wasPlaying = isPlaying;
+        if (wasPlaying) {
+            stopSlideshow();
+        }
+        
+        let newIndex = currentIndex + n;
+        if (newIndex >= image_files.length) {
+            newIndex = 0; // 最後から次へ -> 最初へ
+        } else if (newIndex < 0) {
+            newIndex = image_files.length - 1; // 最初から前へ -> 最後へ
+        }
+        currentIndex = newIndex;
+        showImage(currentIndex);
+
+        if (wasPlaying) {
+            startSlideshow();
+        }
+    }
+
+    // --- イベントリスナー ---
+    toggleButton.addEventListener('click', togglePlay);
+
+    // --- 初期化処理 ---
+    showImage(currentIndex); // 最初の画像を表示
+    startSlideshow();      // スライドショーを開始
 
 </script>
+
+<style>
+    .slideshow-container {
+        position: relative;
+        margin: auto;
+    }
+
+    .prev, .next {
+        cursor: pointer;
+        position: absolute;
+        top: 50%;
+        width: auto;
+        padding: 16px;
+        margin-top: -22px;
+        color: white;
+        font-weight: bold;
+        font-size: 20px;
+        transition: 0.6s ease;
+        border-radius: 0 3px 3px 0;
+        user-select: none;
+        background-color: rgba(0,0,0,0.3);
+    }
+
+    .next {
+        right: 0;
+        border-radius: 3px 0 0 3px;
+    }
+    
+    .prev {
+        left: 0;
+    }
+
+    .prev:hover, .next:hover {
+        background-color: rgba(0,0,0,0.8);
+    }
+</style>
 {% endblock %}
