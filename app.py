@@ -30,6 +30,29 @@ app.config.setdefault('MAX_CONTENT_LENGTH', 16 * 1024 * 1024) # 例: 16MB
 app.config.setdefault('ALLOWED_EXTENSIONS', {'png', 'jpg', 'jpeg', 'gif', 'webp'})
 app.config.setdefault('THUMBNAIL_SIZE', (128, 128)) # サムネイルの最大サイズ
 
+# --- ヘルパー関数 ---
+def get_image_files():
+    """
+    画像ディレクトリを再帰的に探索し、許可された拡張子の画像ファイルパスのリストを返す
+    パスはUPLOAD_FOLDERからの相対パス
+    """
+    img_dir = app.config['UPLOAD_FOLDER']
+    allowed_extensions = app.config['ALLOWED_EXTENSIONS']
+    image_files = []
+    
+    if not os.path.isdir(img_dir):
+        return []
+
+    for root, _, files in os.walk(img_dir):
+        for filename in files:
+            if '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions:
+                # UPLOAD_FOLDERからの相対パスを計算
+                relative_path = os.path.relpath(os.path.join(root, filename), img_dir)
+                image_files.append(relative_path.replace(os.path.sep, '/')) # パス区切り文字をURL用に'/'に統一
+    
+    image_files.sort()
+    return image_files
+
 # --- ルーティングとビュー関数 ---
 
 @app.route('/')
@@ -44,56 +67,35 @@ def image_list():
     """
     画像ファイル一覧を表示するページ
     """
-    img_dir = app.config['UPLOAD_FOLDER'] # app/static/img フォルダのパス
-    allowed_extensions = app.config['ALLOWED_EXTENSIONS']
-    
-    # ディレクトリ内のファイル一覧を取得し、許可された拡張子のファイルのみをフィルタリング
-    image_files = []
-    try:
-        for filename in os.listdir(img_dir):
-            if '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions:
-                image_files.append(filename)
-    except FileNotFoundError:
-        # ディレクトリが存在しない場合は空のリストを渡す
-        pass
-
-    # ファイル名をソート（任意）
-    image_files.sort()
-
-    # テンプレートにファイルリストを渡してレンダリング
+    image_files = get_image_files()
     return render_template('image_list.html', image_files=image_files, title='画像ファイル一覧')
 
-@app.route('/image/<filename>')
+@app.route('/image/<path:filename>')
 def image_display(filename):
     """
     単一の画像ファイルを表示するページ
+    <path:filename> を使用してサブフォルダ内のファイルに対応
     """
+    # UPLOAD_FOLDER内のファイルかチェック
     img_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    
+    # 正規化して、意図しないディレクトリへのアクセスを防ぐ
+    normalized_path = os.path.normpath(img_path)
+    if not normalized_path.startswith(os.path.normpath(app.config['UPLOAD_FOLDER'])):
+        abort(404)
+
     if not os.path.exists(img_path):
         abort(404) # ファイルが存在しない場合は404エラーを返す
 
     return render_template('image_display.html', filename=filename, title=f'{filename} - 画像表示')
 
-@app.route('/slideshow/<filename>')
+@app.route('/slideshow/<path:filename>')
 def slideshow(filename):
     """
     画像ファイルのスライドショーを表示するページ
+    <path:filename> を使用してサブフォルダ内のファイルに対応
     """
-    img_dir = app.config['UPLOAD_FOLDER'] # app/static/img フォルダのパス
-    allowed_extensions = app.config['ALLOWED_EXTENSIONS']
-
-    # ディレクトリ内のファイル一覧を取得し、許可された拡張子のファイルのみをフィルタリング
-    image_files = []
-    try:
-        for fname in os.listdir(img_dir):
-            if '.' in fname and fname.rsplit('.', 1)[1].lower() in allowed_extensions:
-                image_files.append(fname)
-    except FileNotFoundError:
-        # ディレクトリが存在しない場合は空のリストを渡す
-        pass
-
-    # ファイル名をソート（表示順の基本）
-    image_files.sort()
+    image_files = get_image_files()
 
     # 開始ファイル名がリストに存在するか確認し、存在しない場合は404エラー
     if filename not in image_files:
@@ -152,7 +154,6 @@ def save_slideshow_config():
             flash('表示時間は500ミリ秒以上にしてください。', 'warning')
         else:
             app.config['SLIDESHOW_DURATION'] = duration
-            flash('スライドショー表示時間を保存しました。', 'success')
     except (ValueError, TypeError):
         flash('無効な数値が入力されました。', 'danger')
 
