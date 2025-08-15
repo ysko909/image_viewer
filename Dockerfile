@@ -13,7 +13,14 @@ ENV PYTHONUNBUFFERED 1
 
 # --- 作業ディレクトリ ---
 # コンテナ内の作業ディレクトリを作成し、以降の命令の基準パスとします。
-WORKDIR /app
+WORKDIR /home/app
+
+# システムパッケージの更新とPillowのビルドに必要なものをインストール
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libjpeg-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # --- 依存関係のインストール ---
 # まず requirements.txt のみをコピーします。
@@ -23,6 +30,7 @@ COPY requirements.txt .
 
 # pipを最新版にアップグレードし、requirements.txt に基づいてライブラリをインストールします。
 # --no-cache-dir オプションでキャッシュを使わず、イメージサイズを少しでも小さくします。
+# 必要なシステムパッケージをインストール
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
@@ -39,4 +47,4 @@ EXPOSE 5000
 # --- コンテナ起動時のコマンド ---
 # コンテナが起動したときに実行されるデフォルトのコマンドです。
 # Flask の開発サーバーを起動し、コンテナ外からのアクセスを受け付けるために --host=0.0.0.0 を指定します。
-# CMD ["flask", "run", "--host=0.0.0.0"]
+CMD ["flask", "run", "--host=0.0.0.0"]
