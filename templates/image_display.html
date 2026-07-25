@@ -1,10 +1,16 @@
 {% extends 'layout.html' %}
 
-{% block title %}{{ filename }} - 画像表示{% endblock %}
+{% block title %}{{ filename }} - メディア表示{% endblock %}
 
 {% block content %}
-    <h1>画像表示</h1>
-    <img src="{{ url_for('static', filename='img/' + filename) }}" alt="{{ filename }}">
+    <h1>メディア表示</h1>
+    <div class="media-container mb-3 text-center">
+        {% if filename.lower().endswith('.mp4') %}
+            <video src="{{ url_for('static', filename='img/' + filename) }}" controls autoplay loop class="img-fluid" style="max-height: 75vh; border-radius: 8px;"></video>
+        {% else %}
+            <img src="{{ url_for('static', filename='img/' + filename) }}" alt="{{ filename }}" class="img-fluid" style="max-height: 75vh; border-radius: 8px;">
+        {% endif %}
+    </div>
     <p><a href="{{ url_for('slideshow', filename=filename) }}">スライドショーを開始</a></p>
     <p><a href="{{ url_for('image_list') }}">一覧に戻る</a></p>
 {% endblock %}

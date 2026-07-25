@@ -27,13 +27,13 @@ app.config.setdefault('SLIDESHOW_SHUFFLE', False)
 app.config.setdefault('UPLOAD_FOLDER', os.path.join(app.static_folder, 'img'))
 app.config.setdefault('THUMBNAIL_FOLDER', os.path.join(app.config['UPLOAD_FOLDER'], 'thumbnails'))
 app.config.setdefault('MAX_CONTENT_LENGTH', 16 * 1024 * 1024) # 例: 16MB
-app.config.setdefault('ALLOWED_EXTENSIONS', {'png', 'jpg', 'jpeg', 'gif', 'webp'})
+app.config.setdefault('ALLOWED_EXTENSIONS', {'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4'})
 app.config.setdefault('THUMBNAIL_SIZE', (128, 128)) # サムネイルの最大サイズ
 
 # --- ヘルパー関数 ---
-def get_image_files():
+def get_image_files(target_dirs=None, recursive=True):
     """
-    画像ディレクトリを再帰的に探索し、許可された拡張子の画像ファイルパスのリストを返す
+    画像ディレクトリを探索し、許可された拡張子の画像ファイルパスのリストを返す
     パスはUPLOAD_FOLDERからの相対パス
     """
     img_dir = app.config['UPLOAD_FOLDER']
@@ -43,15 +43,61 @@ def get_image_files():
     if not os.path.isdir(img_dir):
         return []
 
-    for root, _, files in os.walk(img_dir):
-        for filename in files:
-            if '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions:
-                # UPLOAD_FOLDERからの相対パスを計算
-                relative_path = os.path.relpath(os.path.join(root, filename), img_dir)
-                image_files.append(relative_path.replace(os.path.sep, '/')) # パス区切り文字をURL用に'/'に統一
-    
+    # target_dirsが指定されていない、または空の場合は、ルート全体を対象とする
+    if not target_dirs:
+        target_dirs = ['']
+
+    for target_dir in target_dirs:
+        # ディレクトリトラバーサル防止のための正規化
+        target_abs_path = os.path.join(img_dir, target_dir)
+        normalized_path = os.path.normpath(target_abs_path)
+        if not normalized_path.startswith(os.path.normpath(img_dir)):
+            continue
+            
+        if not os.path.isdir(normalized_path):
+            continue
+
+        if recursive:
+            for root, _, files in os.walk(normalized_path):
+                for filename in files:
+                    if '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions:
+                        relative_path = os.path.relpath(os.path.join(root, filename), img_dir)
+                        image_files.append(relative_path.replace(os.path.sep, '/'))
+        else:
+            try:
+                for filename in os.listdir(normalized_path):
+                    file_path = os.path.join(normalized_path, filename)
+                    if os.path.isfile(file_path):
+                        if '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions:
+                            relative_path = os.path.relpath(file_path, img_dir)
+                            image_files.append(relative_path.replace(os.path.sep, '/'))
+            except OSError:
+                pass
+
+    # 重複排除とソート
+    image_files = list(set(image_files))
     image_files.sort()
     return image_files
+
+def get_directories():
+    """
+    UPLOAD_FOLDER配下にあるディレクトリのリストを返す（相対パス、ルートディレクトリ含む）
+    """
+    img_dir = app.config['UPLOAD_FOLDER']
+    directories = [''] # ルート（直下）を表す空文字
+    if not os.path.isdir(img_dir):
+        return directories
+        
+    for root, dirs, _ in os.walk(img_dir):
+        for d in dirs:
+            if d == 'thumbnails':
+                continue
+            abs_dir = os.path.join(root, d)
+            rel_dir = os.path.relpath(abs_dir, img_dir)
+            directories.append(rel_dir.replace(os.path.sep, '/'))
+            
+    directories.sort()
+    return directories
 
 # --- ルーティングとビュー関数 ---
 
@@ -68,7 +114,8 @@ def image_list():
     画像ファイル一覧を表示するページ
     """
     image_files = get_image_files()
-    return render_template('image_list.html', image_files=image_files, title='画像ファイル一覧')
+    directories = get_directories()
+    return render_template('image_list.html', image_files=image_files, directories=directories, title='画像ファイル一覧')
 
 @app.route('/image/<path:filename>')
 def image_display(filename):
@@ -115,6 +162,42 @@ def slideshow(filename):
     # スライドショー表示時間とループ設定を取得してテンプレートに渡す
     slideshow_duration = app.config.get('SLIDESHOW_DURATION', 3000)
     slideshow_loop = app.config.get('SLIDESHOW_LOOP', True)
+    return render_template(
+        'slideshow.html', 
+        image_files=image_files, 
+        start_index=start_index, 
+        title='スライドショー', 
+        slideshow_duration=slideshow_duration,
+        slideshow_loop=slideshow_loop
+    )
+
+@app.route('/slideshow')
+def slideshow_custom():
+    """
+    クエリパラメータで指定されたフォルダ内の画像でスライドショーを実行する
+    例: /slideshow?dirs=folder1,folder2&recursive=true
+    """
+    from flask import request, flash, redirect, url_for
+    
+    dirs_str = request.args.get('dirs', '')
+    target_dirs = [d.strip() for d in dirs_str.split(',') if d.strip()] if dirs_str else []
+    
+    recursive = request.args.get('recursive', 'true').lower() == 'true'
+    
+    image_files = get_image_files(target_dirs=target_dirs, recursive=recursive)
+    
+    if not image_files:
+        flash('指定されたフォルダ内に画像ファイルが見つかりませんでした。', 'warning')
+        return redirect(url_for('image_list'))
+        
+    start_index = 0
+    
+    if app.config.get('SLIDESHOW_SHUFFLE', False):
+        random.shuffle(image_files)
+
+    slideshow_duration = app.config.get('SLIDESHOW_DURATION', 3000)
+    slideshow_loop = app.config.get('SLIDESHOW_LOOP', True)
+    
     return render_template(
         'slideshow.html', 
         image_files=image_files, 

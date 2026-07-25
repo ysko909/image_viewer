@@ -6,10 +6,64 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h1>{{ title }}</h1>
         {% if image_files %}
-        <a href="{{ url_for('slideshow', filename=image_files[0]) }}" class="btn btn-primary">スライドショーを開始</a>
+        <a href="{{ url_for('slideshow', filename=image_files[0]) }}" class="btn btn-primary">全画像でスライドショー</a>
         {% endif %}
     </div>
+
+    <!-- フォルダ選択スライドショーセクション -->
+    {% if directories %}
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header bg-dark text-white">
+            <h5 class="mb-0">フォルダ選択スライドショー</h5>
+        </div>
+        <div class="card-body">
+            <form action="{{ url_for('slideshow_custom') }}" method="get" id="custom-slideshow-form">
+                <div class="mb-3">
+                    <label class="form-label d-block fw-bold">対象フォルダを選択 (複数可):</label>
+                    
+                    <!-- 検索と一括操作ボタン -->
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                        <input type="text" id="dir-search" class="form-control form-control-sm flex-grow-1" placeholder="フォルダ名で絞り込み..." style="min-width: 200px;">
+                        <button type="button" id="select-filtered-btn" class="btn btn-outline-secondary btn-sm">表示中をすべて選択</button>
+                        <button type="button" id="clear-all-btn" class="btn btn-outline-secondary btn-sm">すべての選択を解除</button>
+                    </div>
+
+                    <div class="border rounded p-3 bg-light" style="max-height: 200px; overflow-y: auto;">
+                        <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-2" id="dir-choices-container">
+                            {% for dir in directories %}
+                            <div class="col dir-item-col" data-dir-name="{{ dir }}">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="dir_choices" value="{{ dir }}" id="dir_{{ loop.index }}">
+                                    <label class="form-check-label text-truncate" for="dir_{{ loop.index }}" style="max-width: 100%;">
+                                        {% if dir == '' %}
+                                            [ルートフォルダ直下]
+                                        {% else %}
+                                            {{ dir }}
+                                        {% endif %}
+                                    </label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="recursive" name="recursive" value="true" checked>
+                    <label class="form-check-label" for="recursive">
+                        サブフォルダ内の画像も含める
+                    </label>
+                </div>
+                
+                <input type="hidden" name="dirs" id="dirs_input">
+                <button type="submit" class="btn btn-success">選択したフォルダでスライドショーを開始</button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
     {% if image_files %}
+        <h5 class="mb-3">画像ファイル一覧</h5>
         <ul>
             {% for filename in image_files %}
                 <li><a href="{{ url_for('image_display', filename=filename) }}">{{ filename }}</a></li>
@@ -18,4 +72,52 @@
     {% else %}
         <p>画像ファイルが見つかりませんでした。</p>
     {% endif %}
+
+    <script>
+        // 既存のフォーム送信処理
+        document.getElementById('custom-slideshow-form').addEventListener('submit', function(e) {
+            const checkedBoxes = document.querySelectorAll('input[name="dir_choices"]:checked');
+            const dirs = Array.from(checkedBoxes).map(cb => cb.value).join(',');
+            document.getElementById('dirs_input').value = dirs;
+            if (!dirs) {
+                // 何もチェックされていない場合はdirsパラメータを送信しない
+                document.getElementById('dirs_input').disabled = true;
+            }
+        });
+
+        // 検索フィルタ機能
+        const searchInput = document.getElementById('dir-search');
+        const dirCols = document.querySelectorAll('.dir-item-col');
+
+        searchInput.addEventListener('input', function() {
+            const query = searchInput.value.toLowerCase();
+            dirCols.forEach(col => {
+                const dirName = col.getAttribute('data-dir-name').toLowerCase();
+                const displayName = dirName === '' ? '[ルートフォルダ直下]' : dirName;
+                if (dirName.includes(query) || displayName.toLowerCase().includes(query)) {
+                    col.classList.remove('d-none');
+                } else {
+                    col.classList.add('d-none');
+                }
+            });
+        });
+
+        // 表示中のみ全選択
+        document.getElementById('select-filtered-btn').addEventListener('click', function() {
+            dirCols.forEach(col => {
+                if (!col.classList.contains('d-none')) {
+                    const checkbox = col.querySelector('input[type="checkbox"]');
+                    checkbox.checked = true;
+                }
+            });
+        });
+
+        // すべて解除
+        document.getElementById('clear-all-btn').addEventListener('click', function() {
+            dirCols.forEach(col => {
+                const checkbox = col.querySelector('input[type="checkbox"]');
+                checkbox.checked = false;
+            });
+        });
+    </script>
 {% endblock %}

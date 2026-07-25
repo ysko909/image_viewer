@@ -120,3 +120,92 @@ def test_subfolder_image_access(client):
         # クリーンアップ
         os.remove(sub_image_path)
         os.rmdir(subfolder_path)
+
+def test_custom_slideshow(client):
+    """
+    フォルダ選択（カスタム）スライドショーのテスト
+    """
+    img_dir = app.config['UPLOAD_FOLDER']
+    
+    # フォルダ構成の作成
+    dir_a = os.path.join(img_dir, 'dir_a')
+    sub_a = os.path.join(dir_a, 'sub_a')
+    dir_b = os.path.join(img_dir, 'dir_b')
+    
+    os.makedirs(sub_a, exist_ok=True)
+    os.makedirs(dir_b, exist_ok=True)
+    
+    img_a_path = os.path.join(dir_a, 'img_a.png')
+    img_sub_a_path = os.path.join(sub_a, 'img_sub_a.png')
+    img_b_path = os.path.join(dir_b, 'img_b.png')
+    
+    for path in [img_a_path, img_sub_a_path, img_b_path]:
+        with open(path, 'w') as f:
+            f.write('dummy')
+            
+    try:
+        # 1. dir_a内の画像をスライドショー（再帰なし）
+        response = client.get('/slideshow?dirs=dir_a&recursive=false')
+        assert response.status_code == 200
+        assert b'"dir_a/img_a.png"' in response.data
+        assert b'"dir_a/sub_a/img_sub_a.png"' not in response.data
+        
+        # 2. dir_aおよびサブフォルダ内の画像（再帰あり）
+        response = client.get('/slideshow?dirs=dir_a&recursive=true')
+        assert response.status_code == 200
+        assert b'"dir_a/img_a.png"' in response.data
+        assert b'"dir_a/sub_a/img_sub_a.png"' in response.data
+        
+        # 3. 複数フォルダ指定
+        response = client.get('/slideshow?dirs=dir_a/sub_a,dir_b&recursive=false')
+        assert response.status_code == 200
+        assert b'"dir_a/sub_a/img_sub_a.png"' in response.data
+        assert b'"dir_b/img_b.png"' in response.data
+        assert b'"dir_a/img_a.png"' not in response.data
+        
+        # 4. 画像が見つからない場合
+        response = client.get('/slideshow?dirs=non_existent&recursive=true', follow_redirects=True)
+        assert response.status_code == 200
+        assert '画像ファイルが見つかりませんでした。' in response.data.decode('utf-8')
+
+    finally:
+        # クリーンアップ
+        for path in [img_a_path, img_sub_a_path, img_b_path]:
+            if os.path.exists(path):
+                os.remove(path)
+        for d in [sub_a, dir_a, dir_b]:
+            if os.path.exists(d):
+                os.rmdir(d)
+
+def test_video_playback(client):
+    """
+    動画ファイル（mp4）の検出と表示のテスト
+    """
+    img_dir = app.config['UPLOAD_FOLDER']
+    video_filename = 'test_fixture_video.mp4'
+    video_path = os.path.join(img_dir, video_filename)
+    
+    with open(video_path, 'w') as f:
+        f.write('dummy video data')
+        
+    try:
+        # 1. 画像一覧に動画ファイルが含まれることを確認
+        response = client.get('/images')
+        assert response.status_code == 200
+        assert video_filename.encode('utf-8') in response.data
+        
+        # 2. 個別表示画面にアクセスした際、videoタグが生成されることを確認
+        response = client.get(f'/image/{video_filename}')
+        assert response.status_code == 200
+        assert b'<video src="/static/img/test_fixture_video.mp4"' in response.data
+        assert b'<img ' not in response.data
+        
+        # 3. スライドショー画面にアクセスした際、JSONデータに動画ファイル名が含まれること
+        response = client.get(f'/slideshow/{video_filename}')
+        assert response.status_code == 200
+        assert video_filename.encode('utf-8') in response.data
+        assert b'slideshow-video' in response.data
+        
+    finally:
+        if os.path.exists(video_path):
+            os.remove(video_path)

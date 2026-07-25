@@ -7,10 +7,13 @@
     <h2 id="filename-display" class="mb-3"></h2>
 
     <div class="slideshow-container position-relative d-inline-block">
-        {# 画像表示エリア #}
-        <a id="image-link" href="">
-            <img id="slideshow-image" src="" alt="Slideshow Image" class="img-fluid" style="max-height: 75vh; border-radius: 8px;">
-        </a>
+        {# メディア表示エリア #}
+        <div id="media-wrapper" style="max-height: 75vh; border-radius: 8px; overflow: hidden; display: inline-block;">
+            <a id="image-link" href="">
+                <img id="slideshow-image" src="" alt="Slideshow Image" class="img-fluid" style="max-height: 75vh; border-radius: 8px;">
+            </a>
+            <video id="slideshow-video" src="" controls autoplay muted class="img-fluid d-none" style="max-height: 75vh; border-radius: 8px;"></video>
+        </div>
 
         {# 前へボタン #}
         <a class="prev" onclick="plusSlides(-1)">&#10094;</a>
@@ -38,8 +41,9 @@
 <script>
     // --- DOM要素の取得 ---
     const imageElement = document.getElementById('slideshow-image');
-    const filenameDisplay = document.getElementById('filename-display');
+    const videoElement = document.getElementById('slideshow-video');
     const imageLink = document.getElementById('image-link');
+    const filenameDisplay = document.getElementById('filename-display');
     const toggleButton = document.getElementById('toggle-play');
 
     // --- データ取得と初期化 ---
@@ -52,36 +56,61 @@
     // --- 関数定義 ---
 
     /**
-     * 指定されたインデックスの画像を表示する
-     * @param {number} index - 表示する画像のインデックス
+     * 指定されたインデックスのメディア（画像または動画）を表示する
+     * @param {number} index - 表示するメディアのインデックス
      */
     function showImage(index) {
         if (index < 0 || index >= image_files.length) {
             console.error('Invalid image index:', index);
             return;
         }
+        
+        if (timer !== null) {
+            clearInterval(timer);
+            timer = null;
+        }
+
         const filename = image_files[index];
-        imageElement.src = `${base_img_url}${filename}`;
-        imageElement.alt = filename;
+        const isVideo = filename.toLowerCase().endsWith('.mp4');
+        const mediaUrl = `${base_img_url}${filename}`;
+
+        if (isVideo) {
+            imageLink.classList.add('d-none');
+            videoElement.classList.remove('d-none');
+            videoElement.src = mediaUrl;
+            videoElement.load();
+            if (isPlaying) {
+                videoElement.play().catch(e => console.log("Auto-play prevented or failed: ", e));
+            } else {
+                videoElement.pause();
+            }
+        } else {
+            videoElement.classList.add('d-none');
+            videoElement.src = '';
+            imageLink.classList.remove('d-none');
+            imageElement.src = mediaUrl;
+            imageElement.alt = filename;
+            imageLink.href = `/image/${filename}`;
+
+            if (isPlaying) {
+                timer = setInterval(nextImage, duration);
+            }
+        }
         filenameDisplay.textContent = filename;
-        // 画像クリックでその画像の表示ページに飛ぶようにリンクを更新
-        imageLink.href = `/image/${filename}`;
     }
 
     /**
-     * スライドショーを次の画像に進める
+     * スライドショーを次のメディアに進める
      */
     function nextImage() {
         let nextIndex = currentIndex + 1;
 
         if (nextIndex >= image_files.length) {
             if (loop) {
-                nextIndex = 0; // ループが有効なら最初に戻る
+                nextIndex = 0;
             } else {
-                stopSlideshow(); // ループが無効なら停止
-                // オプション：一覧ページに戻る
-                // window.location.href = "{{ url_for('image_list') }}";
-                return; // 処理を終了
+                stopSlideshow();
+                return;
             }
         }
         currentIndex = nextIndex;
@@ -93,9 +122,16 @@
      */
     function startSlideshow() {
         if (timer === null) {
-            timer = setInterval(nextImage, duration);
             isPlaying = true;
             toggleButton.textContent = '一時停止';
+            
+            const filename = image_files[currentIndex];
+            const isVideo = filename.toLowerCase().endsWith('.mp4');
+            if (isVideo) {
+                videoElement.play().catch(e => console.log(e));
+            } else {
+                timer = setInterval(nextImage, duration);
+            }
         }
     }
 
@@ -107,6 +143,7 @@
         timer = null;
         isPlaying = false;
         toggleButton.textContent = '再生';
+        videoElement.pause();
     }
 
     /**
@@ -125,7 +162,6 @@
      * @param {number} n
      */
     function plusSlides(n) {
-        // スライドショーが動いている場合は一度停止して、操作後に再度開始する
         const wasPlaying = isPlaying;
         if (wasPlaying) {
             stopSlideshow();
@@ -133,9 +169,9 @@
         
         let newIndex = currentIndex + n;
         if (newIndex >= image_files.length) {
-            newIndex = 0; // 最後から次へ -> 最初へ
+            newIndex = 0;
         } else if (newIndex < 0) {
-            newIndex = image_files.length - 1; // 最初から前へ -> 最後へ
+            newIndex = image_files.length - 1;
         }
         currentIndex = newIndex;
         showImage(currentIndex);
@@ -148,9 +184,17 @@
     // --- イベントリスナー ---
     toggleButton.addEventListener('click', togglePlay);
 
+    videoElement.addEventListener('ended', function() {
+        if (isPlaying) {
+            nextImage();
+        }
+    });
+
     // --- 初期化処理 ---
-    showImage(currentIndex); // 最初の画像を表示
-    startSlideshow();      // スライドショーを開始
+    showImage(currentIndex);
+    if (isPlaying) {
+        startSlideshow();
+    }
 
 </script>
 
