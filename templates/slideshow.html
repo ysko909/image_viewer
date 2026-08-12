@@ -78,9 +78,16 @@
             imageLink.classList.add('d-none');
             videoElement.classList.remove('d-none');
             videoElement.src = mediaUrl;
+            videoElement.muted = true; // 自動再生ポリシーをクリアするために明示的にミュートを設定
             videoElement.load();
             if (isPlaying) {
-                videoElement.play().catch(e => console.log("Auto-play prevented or failed: ", e));
+                videoElement.play().catch(e => {
+                    console.log("Auto-play prevented or failed: ", e);
+                    // 自動再生が拒否された場合、スライドショーが停止するのを防ぐため、一定時間後に次のスライドに進む
+                    if (isPlaying && timer === null) {
+                        timer = setInterval(nextImage, duration);
+                    }
+                });
             } else {
                 videoElement.pause();
             }
@@ -128,7 +135,13 @@
             const filename = image_files[currentIndex];
             const isVideo = filename.toLowerCase().endsWith('.mp4');
             if (isVideo) {
-                videoElement.play().catch(e => console.log(e));
+                videoElement.muted = true; // 明示的にミュートを設定
+                videoElement.play().catch(e => {
+                    console.log("Start slideshow play failed: ", e);
+                    if (isPlaying && timer === null) {
+                        timer = setInterval(nextImage, duration);
+                    }
+                });
             } else {
                 timer = setInterval(nextImage, duration);
             }
