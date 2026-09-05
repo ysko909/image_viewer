@@ -200,11 +200,14 @@ def test_video_playback(client):
         assert b'<video src="/static/img/test_fixture_video.mp4"' in response.data
         assert b'<img ' not in response.data
         
-        # 3. スライドショー画面にアクセスした際、JSONデータに動画ファイル名が含まれること
+        # 3. スライドショー画面にアクセスした際、JSONデータに動画ファイル名が含まれ、インライン再生用属性が存在すること
         response = client.get(f'/slideshow/{video_filename}')
         assert response.status_code == 200
         assert video_filename.encode('utf-8') in response.data
-        assert b'slideshow-video' in response.data
+        assert b'id="slideshow-video"' in response.data
+        assert b'playsinline' in response.data
+        assert b'webkit-playsinline' in response.data
+        assert b'muted' in response.data
         
     finally:
         if os.path.exists(video_path):

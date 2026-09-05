@@ -12,7 +12,7 @@
             <a id="image-link" href="">
                 <img id="slideshow-image" src="" alt="Slideshow Image" class="img-fluid" style="max-height: 75vh; border-radius: 8px;">
             </a>
-            <video id="slideshow-video" src="" controls autoplay muted class="img-fluid d-none" style="max-height: 75vh; border-radius: 8px;"></video>
+            <video id="slideshow-video" src="" playsinline webkit-playsinline autoplay muted preload="auto" class="img-fluid d-none" style="max-height: 75vh; border-radius: 8px;"></video>
         </div>
 
         {# 前へボタン #}
@@ -50,10 +50,35 @@
     const data = JSON.parse(document.getElementById('slideshow-data').textContent);
     const { image_files, start_index, duration, loop, base_img_url } = data;
     let currentIndex = start_index;
-    let timer = null; // setIntervalのIDを保持
+    let timer = null; // スライド切り替え用タイマーID
     let isPlaying = true;
 
-    // --- 関数定義 ---
+    // --- 補助関数 ---
+
+    /**
+     * すべてのアクティブなタイマーをクリアする
+     */
+    function clearSlideTimer() {
+        if (timer !== null) {
+            clearTimeout(timer);
+            timer = null;
+        }
+    }
+
+    /**
+     * 全画面表示になっている場合は安全に解除する
+     */
+    function exitFullscreenIfActive() {
+        if (document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement) {
+            if (document.exitFullscreen) {
+                document.exitFullscreen().catch(function() {});
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            }
+        }
+    }
+
+    // --- メイン関数 ---
 
     /**
      * 指定されたインデックスのメディア（画像または動画）を表示する
@@ -64,46 +89,63 @@
             console.error('Invalid image index:', index);
             return;
         }
-        
-        if (timer !== null) {
-            clearInterval(timer);
-            timer = null;
-        }
 
+        clearSlideTimer();
+        exitFullscreenIfActive();
+
+        currentIndex = index;
         const filename = image_files[index];
         const isVideo = filename.toLowerCase().endsWith('.mp4');
         const mediaUrl = `${base_img_url}${filename}`;
 
+        filenameDisplay.textContent = filename;
+
         if (isVideo) {
+            // 画像表示を隠す
             imageLink.classList.add('d-none');
+            imageElement.src = '';
+
+            // 動画要素を設定
             videoElement.classList.remove('d-none');
+            videoElement.muted = true;
+            videoElement.defaultMuted = true;
+            videoElement.playsInline = true;
+            videoElement.setAttribute('playsinline', '');
+            videoElement.setAttribute('webkit-playsinline', '');
             videoElement.src = mediaUrl;
-            videoElement.muted = true; // 自動再生ポリシーをクリアするために明示的にミュートを設定
-            videoElement.load();
+            videoElement.currentTime = 0;
+
             if (isPlaying) {
-                videoElement.play().catch(e => {
-                    console.log("Auto-play prevented or failed: ", e);
-                    // 自動再生が拒否された場合、スライドショーが停止するのを防ぐため、一定時間後に次のスライドに進む
-                    if (isPlaying && timer === null) {
-                        timer = setInterval(nextImage, duration);
-                    }
-                });
+                const playPromise = videoElement.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(function(error) {
+                        console.log("Auto-play prevented or failed: ", error);
+                        // 自動再生が拒否された場合、スライドショーが停止しないよう設定時間後に次へ進む
+                        if (isPlaying && timer === null) {
+                            timer = setTimeout(nextImage, duration);
+                        }
+                    });
+                }
             } else {
                 videoElement.pause();
             }
         } else {
+            // 動画を停止して非表示・リソース解放
+            videoElement.pause();
+            videoElement.removeAttribute('src');
+            videoElement.load();
             videoElement.classList.add('d-none');
-            videoElement.src = '';
+
+            // 画像を表示
             imageLink.classList.remove('d-none');
             imageElement.src = mediaUrl;
             imageElement.alt = filename;
             imageLink.href = `/image/${filename}`;
 
             if (isPlaying) {
-                timer = setInterval(nextImage, duration);
+                timer = setTimeout(nextImage, duration);
             }
         }
-        filenameDisplay.textContent = filename;
     }
 
     /**
@@ -120,30 +162,33 @@
                 return;
             }
         }
-        currentIndex = nextIndex;
-        showImage(currentIndex);
+        showImage(nextIndex);
     }
 
     /**
-     * スライドショーを開始する
+     * スライドショーを開始（再開）する
      */
     function startSlideshow() {
-        if (timer === null) {
-            isPlaying = true;
-            toggleButton.textContent = '一時停止';
-            
-            const filename = image_files[currentIndex];
-            const isVideo = filename.toLowerCase().endsWith('.mp4');
-            if (isVideo) {
-                videoElement.muted = true; // 明示的にミュートを設定
-                videoElement.play().catch(e => {
-                    console.log("Start slideshow play failed: ", e);
+        isPlaying = true;
+        toggleButton.textContent = '一時停止';
+
+        const filename = image_files[currentIndex];
+        const isVideo = filename.toLowerCase().endsWith('.mp4');
+
+        if (isVideo) {
+            videoElement.muted = true;
+            const playPromise = videoElement.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(function(error) {
+                    console.log("Start slideshow play failed: ", error);
                     if (isPlaying && timer === null) {
-                        timer = setInterval(nextImage, duration);
+                        timer = setTimeout(nextImage, duration);
                     }
                 });
-            } else {
-                timer = setInterval(nextImage, duration);
+            }
+        } else {
+            if (timer === null) {
+                timer = setTimeout(nextImage, duration);
             }
         }
     }
@@ -152,8 +197,7 @@
      * スライドショーを停止する
      */
     function stopSlideshow() {
-        clearInterval(timer);
-        timer = null;
+        clearSlideTimer();
         isPlaying = false;
         toggleButton.textContent = '再生';
         videoElement.pause();
@@ -179,15 +223,15 @@
         if (wasPlaying) {
             stopSlideshow();
         }
-        
+
         let newIndex = currentIndex + n;
         if (newIndex >= image_files.length) {
             newIndex = 0;
         } else if (newIndex < 0) {
             newIndex = image_files.length - 1;
         }
-        currentIndex = newIndex;
-        showImage(currentIndex);
+
+        showImage(newIndex);
 
         if (wasPlaying) {
             startSlideshow();
@@ -197,9 +241,18 @@
     // --- イベントリスナー ---
     toggleButton.addEventListener('click', togglePlay);
 
+    // 動画再生終了時に自動的に次のメディアへ進む
     videoElement.addEventListener('ended', function() {
         if (isPlaying) {
             nextImage();
+        }
+    });
+
+    // 動画読み込み・再生エラー時のフォールバック処理
+    videoElement.addEventListener('error', function() {
+        console.log('Video error occurred');
+        if (isPlaying && timer === null) {
+            timer = setTimeout(nextImage, duration);
         }
     });
 
@@ -208,7 +261,6 @@
     if (isPlaying) {
         startSlideshow();
     }
-
 </script>
 
 <style>
