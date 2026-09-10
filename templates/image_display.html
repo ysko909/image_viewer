@@ -3,14 +3,60 @@
 {% block title %}{{ filename }} - メディア表示{% endblock %}
 
 {% block content %}
-    <h1>メディア表示</h1>
-    <div class="media-container mb-3 text-center">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h3 mb-0 text-truncate" style="max-width: 70%;">{{ filename }}</h1>
+        <div>
+            <a href="{{ url_for('slideshow', filename=filename) }}" class="btn btn-primary btn-sm">スライドショーを開始</a>
+            <a href="{{ url_for('image_list') }}" class="btn btn-outline-secondary btn-sm">一覧に戻る</a>
+        </div>
+    </div>
+
+    <div class="media-container mb-4 text-center bg-dark p-2 rounded">
         {% if filename.lower().endswith('.mp4') %}
-            <video src="{{ url_for('static', filename='img/' + filename) }}" controls autoplay loop class="img-fluid" style="max-height: 75vh; border-radius: 8px;"></video>
+            <video src="{{ url_for('static', filename='img/' + filename) }}" controls autoplay loop class="img-fluid" style="max-height: 70vh; border-radius: 4px;"></video>
         {% else %}
-            <img src="{{ url_for('static', filename='img/' + filename) }}" alt="{{ filename }}" class="img-fluid" style="max-height: 75vh; border-radius: 8px;">
+            <img src="{{ url_for('static', filename='img/' + filename) }}" alt="{{ filename }}" class="img-fluid" style="max-height: 70vh; border-radius: 4px;">
         {% endif %}
     </div>
-    <p><a href="{{ url_for('slideshow', filename=filename) }}">スライドショーを開始</a></p>
-    <p><a href="{{ url_for('image_list') }}">一覧に戻る</a></p>
+
+    {% if file_info %}
+    <div class="card mb-4 shadow-sm" id="media-metadata-card">
+        <div class="card-header bg-light">
+            <h6 class="mb-0 fw-bold">📄 メディア詳細情報</h6>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-bordered table-sm mb-0">
+                <tbody>
+                    <tr>
+                        <th class="bg-light w-25 px-3">ファイル名</th>
+                        <td class="px-3"><code>{{ file_info.filename }}</code></td>
+                    </tr>
+                    <tr>
+                        <th class="bg-light px-3">ファイル形式</th>
+                        <td class="px-3"><span class="badge bg-secondary">{{ file_info.extension }}</span> {% if file_info.is_video %}(動画){% else %}(画像){% endif %}</td>
+                    </tr>
+                    <tr>
+                        <th class="bg-light px-3">ファイルサイズ</th>
+                        <td class="px-3">{{ file_info.formatted_size }} ({{ "{:,}".format(file_info.size_bytes) }} バイト)</td>
+                    </tr>
+                    {% if file_info.dimensions %}
+                    <tr>
+                        <th class="bg-light px-3">解像度 (幅 × 高さ)</th>
+                        <td class="px-3">{{ file_info.dimensions }}</td>
+                    </tr>
+                    {% endif %}
+                    <tr>
+                        <th class="bg-light px-3">最終更新日時</th>
+                        <td class="px-3">{{ file_info.formatted_mtime }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="mb-4">
+        <a href="{{ url_for('slideshow', filename=filename) }}" class="btn btn-primary">この画像からスライドショーを開始</a>
+        <a href="{{ url_for('image_list') }}" class="btn btn-outline-secondary">一覧に戻る</a>
+    </div>
 {% endblock %}

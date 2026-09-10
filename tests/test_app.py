@@ -44,6 +44,10 @@ def test_image_display_page(client):
     response = client.get('/image/test_fixture_image.png')
     assert response.status_code == 200
     assert b'<img src="/static/img/test_fixture_image.png"' in response.data
+    # メディア詳細情報カードの存在確認
+    assert 'id="media-metadata-card"' in response.data.decode('utf-8')
+    assert 'ファイルサイズ' in response.data.decode('utf-8')
+    assert '最終更新日時' in response.data.decode('utf-8')
 
     response = client.get('/image/non_existent_image.jpg')
     assert response.status_code == 404

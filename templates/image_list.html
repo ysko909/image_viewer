@@ -122,9 +122,19 @@
                         <img src="{{ url_for('thumbnail', filename=filename) }}" alt="{{ filename }}" loading="lazy" class="img-fluid rounded" style="max-height: 120px; max-width: 100%; object-fit: contain;">
                     </a>
                     <div class="card-body p-2 d-flex flex-column justify-content-between">
-                        <small class="card-text text-truncate d-block mb-1" title="{{ filename }}">
-                            <a href="{{ url_for('image_display', filename=filename) }}" class="text-dark text-decoration-none">{{ filename }}</a>
-                        </small>
+                        <div>
+                            <small class="card-text text-truncate d-block mb-1" title="{{ filename }}">
+                                <a href="{{ url_for('image_display', filename=filename) }}" class="text-dark text-decoration-none">{{ filename }}</a>
+                            </small>
+                            {% if file_info_map and file_info_map.get(filename) %}
+                            <div class="text-muted mb-2" style="font-size: 0.72rem;">
+                                <span>{{ file_info_map[filename].formatted_size }}</span>
+                                {% if file_info_map[filename].dimensions %}
+                                <span class="d-block">{{ file_info_map[filename].dimensions }}</span>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
                         <a href="{{ url_for('slideshow', filename=filename) }}" class="btn btn-outline-primary btn-sm py-0" style="font-size: 0.75rem;">再生</a>
                     </div>
                 </div>
@@ -137,7 +147,16 @@
             <ul class="list-group">
                 {% for filename in image_files %}
                     <li class="list-group-item d-flex justify-content-between align-items-center">
-                        <a href="{{ url_for('image_display', filename=filename) }}">{{ filename }}</a>
+                        <div>
+                            <a href="{{ url_for('image_display', filename=filename) }}">{{ filename }}</a>
+                            {% if file_info_map and file_info_map.get(filename) %}
+                            <span class="badge bg-light text-secondary border ms-2">{{ file_info_map[filename].formatted_size }}</span>
+                            {% if file_info_map[filename].dimensions %}
+                            <span class="badge bg-light text-secondary border ms-1">{{ file_info_map[filename].dimensions }}</span>
+                            {% endif %}
+                            <span class="small text-muted ms-2">{{ file_info_map[filename].formatted_mtime }}</span>
+                            {% endif %}
+                        </div>
                         <a href="{{ url_for('slideshow', filename=filename) }}" class="btn btn-outline-primary btn-sm">スライドショー</a>
                     </li>
                 {% endfor %}

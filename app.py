@@ -153,6 +153,53 @@ def index():
     """
     return redirect(url_for('image_list'))
 
+def get_file_info(filename):
+    """
+    指定されたメディアファイルの詳細情報（サイズ、更新日時、解像度等）を取得する
+    """
+    from datetime import datetime
+    img_dir = app.config['UPLOAD_FOLDER']
+    abs_path = os.path.normpath(os.path.join(img_dir, filename))
+    if not abs_path.startswith(os.path.normpath(img_dir)) or not os.path.exists(abs_path):
+        return None
+
+    stat = os.stat(abs_path)
+    size_bytes = stat.st_size
+    if size_bytes < 1024:
+        formatted_size = f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        formatted_size = f"{size_bytes / 1024:.1f} KB"
+    else:
+        formatted_size = f"{size_bytes / (1024 * 1024):.2f} MB"
+
+    mtime_dt = datetime.fromtimestamp(stat.st_mtime)
+    formatted_mtime = mtime_dt.strftime('%Y-%m-%d %H:%M:%S')
+
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    is_video = ext == 'mp4'
+
+    width, height, dimensions_str = None, None, None
+    if not is_video:
+        try:
+            with Image.open(abs_path) as im:
+                width, height = im.size
+                dimensions_str = f"{width} × {height} px"
+        except Exception:
+            pass
+
+    return {
+        'filename': filename,
+        'size_bytes': size_bytes,
+        'formatted_size': formatted_size,
+        'mtime': stat.st_mtime,
+        'formatted_mtime': formatted_mtime,
+        'extension': ext.upper(),
+        'is_video': is_video,
+        'width': width,
+        'height': height,
+        'dimensions': dimensions_str
+    }
+
 @app.route('/images')
 def image_list():
     """
@@ -181,6 +228,7 @@ def image_list():
     start_idx = (page - 1) * per_page
     end_idx = start_idx + per_page
     paginated_files = filtered_files[start_idx:end_idx]
+    file_info_map = {f: get_file_info(f) for f in paginated_files}
 
     pagination = {
         'page': page,
@@ -197,6 +245,7 @@ def image_list():
     return render_template(
         'image_list.html',
         image_files=paginated_files,
+        file_info_map=file_info_map,
         all_image_count=len(all_files),
         directories=directories,
         pagination=pagination,
@@ -222,7 +271,8 @@ def image_display(filename):
     if not os.path.exists(img_path):
         abort(404) # ファイルが存在しない場合は404エラーを返す
 
-    return render_template('image_display.html', filename=filename, title=f'{filename} - 画像表示')
+    file_info = get_file_info(filename)
+    return render_template('image_display.html', filename=filename, file_info=file_info, title=f'{filename} - 画像表示')
 
 @app.route('/thumbnail/<path:filename>')
 def thumbnail(filename):
