@@ -22,6 +22,10 @@ def client():
         yield client
 
     # テスト後のクリーンアップ
+    app.config['SLIDESHOW_EXTENSIONS'] = None
+    app.config['SLIDESHOW_DURATION'] = 3000
+    app.config['SLIDESHOW_LOOP'] = True
+    app.config['SLIDESHOW_SHUFFLE'] = False
     if os.path.exists(dummy_image_path):
         os.remove(dummy_image_path)
 
@@ -81,17 +85,20 @@ def test_slideshow_config_page(client):
     assert b'<form action="/slideshow/config/save" method="post">' in response.data
     assert '<label for="duration" class="form-label">表示時間 (ミリ秒)</label>' in response.data.decode('utf-8')
     assert '<button type="submit" class="btn btn-primary">設定を保存</button>'.encode('utf-8') in response.data
+    assert '対象ファイルの拡張子' in response.data.decode('utf-8')
+    assert 'name="extensions"' in response.data.decode('utf-8')
+    assert 'value="png"' in response.data.decode('utf-8')
 
 def test_save_slideshow_config(client):
     """
     スライドショー設定の保存が正しく行われるかテスト
     """
-    response = client.post('/slideshow/config/save', data={'duration': '5000', 'loop_enabled': 'on'}, follow_redirects=True)
+    response = client.post('/slideshow/config/save', data={'duration': '5000', 'loop_enabled': 'on', 'extensions': 'png'}, follow_redirects=True)
     assert response.status_code == 200
     assert '設定を保存しました。' in response.data.decode('utf-8')
     response = client.get('/slideshow/config')
     assert b'value="5000"' in response.data
-    assert b'checked' in response.data # ループがチェックされていることを確認
+    assert b'checked' in response.data # ループおよび拡張子がチェックされていることを確認
 
 def test_root_redirect(client):
     """
@@ -323,3 +330,125 @@ def test_image_search_sort_pagination(client):
             os.remove(file_a)
         if os.path.exists(file_b):
             os.remove(file_b)
+
+
+def test_get_available_extensions(client):
+    """
+    フォルダ内のメディアファイルから実在する拡張子のみが正しく抽出され、非メディアファイルが除外されるかテスト
+    """
+    from app import get_available_extensions
+    img_dir = app.config['UPLOAD_FOLDER']
+    sub_dir = os.path.join(img_dir, 'ext_test_sub')
+    os.makedirs(sub_dir, exist_ok=True)
+
+    test_files = [
+        os.path.join(img_dir, 'sample.jpg'),
+        os.path.join(img_dir, 'sample.WEBP'),
+        os.path.join(sub_dir, 'video.mp4'),
+        os.path.join(sub_dir, 'video2.webm'),
+        os.path.join(img_dir, 'config.json'),     # 非メディアファイル（除外されるべき）
+        os.path.join(img_dir, '.test_dummy_sysfile'), # システムファイル（除外されるべき）
+        os.path.join(sub_dir, 'notes.txt')        # テキストファイル（除外されるべき）
+    ]
+
+    for p in test_files:
+        with open(p, 'w') as f:
+            f.write('dummy')
+
+    try:
+        available = get_available_extensions()
+        # test_fixture_image.png も fixture で存在
+        assert 'png' in available
+        assert 'jpg' in available
+        assert 'webp' in available
+        assert 'mp4' in available
+        assert 'webm' in available
+        assert 'json' not in available
+        assert 'txt' not in available
+        assert 'ds_store' not in available
+    finally:
+        for p in test_files:
+            if os.path.exists(p):
+                os.remove(p)
+        if os.path.exists(sub_dir):
+            os.rmdir(sub_dir)
+
+
+def test_save_slideshow_config_validation_empty(client):
+    """
+    拡張子が1つも選択されていない状態で保存した場合のバリデーション警告テスト
+    """
+    # 拡張子パラメータなしでPOST
+    response = client.post('/slideshow/config/save', data={'duration': '3000'}, follow_redirects=True)
+    assert response.status_code == 200
+    assert 'スライドショー対象の拡張子を少なくとも1つ選択してください。' in response.data.decode('utf-8')
+
+
+def test_slideshow_extension_filtering_and_redirect(client):
+    """
+    スライドショー再生時に設定した拡張子のみが対象となり、対象外の開始ファイル時はリダイレクトされるかテスト
+    """
+    img_dir = app.config['UPLOAD_FOLDER']
+    img_file = os.path.join(img_dir, 'filter_test.png')
+    video_file = os.path.join(img_dir, 'filter_test.mp4')
+
+    with open(img_file, 'w') as f:
+        f.write('dummy image')
+    with open(video_file, 'w') as f:
+        f.write('dummy video')
+
+    try:
+        # スライドショー対象拡張子を png のみに設定
+        app.config['SLIDESHOW_EXTENSIONS'] = {'png'}
+
+        # 1. png ファイルからスライドショー開始 -> 成功し、mp4 はリストに含まれない
+        res_png = client.get('/slideshow/filter_test.png')
+        assert res_png.status_code == 200
+        assert b'"filter_test.png"' in res_png.data
+        assert b'"filter_test.mp4"' not in res_png.data
+
+        # 2. 対象外の mp4 ファイルからスライドショー開始 -> リダイレクトとフラッシュ警告
+        res_mp4 = client.get('/slideshow/filter_test.mp4', follow_redirects=True)
+        assert res_mp4.status_code == 200
+        assert '拡張子「.mp4」はスライドショー対象外に設定されています。' in res_mp4.data.decode('utf-8')
+
+        # 3. 設定を png と mp4 両方に変更
+        app.config['SLIDESHOW_EXTENSIONS'] = {'png', 'mp4'}
+        res_both = client.get('/slideshow/filter_test.png')
+        assert res_both.status_code == 200
+        assert b'"filter_test.png"' in res_both.data
+        assert b'"filter_test.mp4"' in res_both.data
+    finally:
+        # クリーンアップ
+        app.config['SLIDESHOW_EXTENSIONS'] = None
+        if os.path.exists(img_file):
+            os.remove(img_file)
+        if os.path.exists(video_file):
+            os.remove(video_file)
+
+
+def test_video_extensions_and_thumbnail(client):
+    """
+    mp4, webm, mov などの動画拡張子に対するSVGサムネイル生成および動画メタデータ判定テスト
+    """
+    from app import is_video_file
+    assert is_video_file('sample.mp4') is True
+    assert is_video_file('sample.webm') is True
+    assert is_video_file('sample.mov') is True
+    assert is_video_file('sample.m4v') is True
+    assert is_video_file('sample.png') is False
+    assert is_video_file('sample.jpg') is False
+
+    img_dir = app.config['UPLOAD_FOLDER']
+    mov_file = os.path.join(img_dir, 'sample_test.mov')
+    with open(mov_file, 'w') as f:
+        f.write('dummy mov')
+
+    try:
+        res = client.get('/thumbnail/sample_test.mov')
+        assert res.status_code == 200
+        assert 'svg' in res.mimetype
+        assert 'MOV' in res.data.decode('utf-8')
+    finally:
+        if os.path.exists(mov_file):
+            os.remove(mov_file)

@@ -22,13 +22,20 @@ app.config.setdefault('SLIDESHOW_DURATION', 3000)
 app.config.setdefault('SLIDESHOW_LOOP', True)
 # スライドショーのシャッフル設定 (デフォルトは無効)
 app.config.setdefault('SLIDESHOW_SHUFFLE', False)
+# スライドショー対象拡張子 (デフォルトはNone: フォルダ内の全検出拡張子)
+app.config.setdefault('SLIDESHOW_EXTENSIONS', None)
+
+# サポートするメディア拡張子定義
+SUPPORTED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'}
+SUPPORTED_VIDEO_EXTENSIONS = {'mp4', 'webm', 'mov', 'm4v'}
+SUPPORTED_MEDIA_EXTENSIONS = SUPPORTED_IMAGE_EXTENSIONS | SUPPORTED_VIDEO_EXTENSIONS
 
 # アップロードフォルダやサムネイルフォルダのパスを設定（デフォルト値）
 # config.py で上書き可能
 app.config.setdefault('UPLOAD_FOLDER', os.path.join(app.static_folder, 'img'))
 app.config.setdefault('THUMBNAIL_FOLDER', os.path.join(app.config['UPLOAD_FOLDER'], 'thumbnails'))
 app.config.setdefault('MAX_CONTENT_LENGTH', 16 * 1024 * 1024) # 例: 16MB
-app.config.setdefault('ALLOWED_EXTENSIONS', {'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4'})
+app.config.setdefault('ALLOWED_EXTENSIONS', SUPPORTED_MEDIA_EXTENSIONS)
 app.config.setdefault('THUMBNAIL_SIZE', (128, 128)) # サムネイルの最大サイズ
 
 def sort_image_files(image_files, sort_by='name_asc'):
@@ -73,13 +80,58 @@ def sort_image_files(image_files, sort_by='name_asc'):
     else:
         return sorted(image_files)
 
-def get_image_files(target_dirs=None, recursive=True, sort_by='name_asc'):
+def is_video_file(filename):
     """
-    画像ディレクトリを探索し、許可された拡張子の画像ファイルパスのリストを返す
+    ファイル名から動画ファイルかどうかを判定する
+    """
+    if '.' not in filename:
+        return False
+    ext = filename.rsplit('.', 1)[-1].lower()
+    return ext in SUPPORTED_VIDEO_EXTENSIONS
+
+def get_available_extensions():
+    """
+    UPLOAD_FOLDER配下に実際に存在するメディアファイル（画像・動画）の拡張子一覧（小文字、ソート済みリスト）を返す
+    """
+    img_dir = app.config['UPLOAD_FOLDER']
+    found_extensions = set()
+    if not os.path.isdir(img_dir):
+        return []
+
+    for root, dirs, files in os.walk(img_dir):
+        if 'thumbnails' in dirs:
+            dirs.remove('thumbnails')
+        for filename in files:
+            if '.' in filename:
+                ext = filename.rsplit('.', 1)[-1].lower()
+                if ext in SUPPORTED_MEDIA_EXTENSIONS:
+                    found_extensions.add(ext)
+
+    return sorted(list(found_extensions))
+
+def get_active_slideshow_extensions():
+    """
+    現在アクティブなスライドショー対象拡張子のセットを返す。
+    設定されていない場合はフォルダ内の実在拡張子（存在しない場合は全メディア拡張子）を返す。
+    """
+    configured = app.config.get('SLIDESHOW_EXTENSIONS')
+    if configured:
+        return set(configured)
+    available = get_available_extensions()
+    if available:
+        return set(available)
+    return set(SUPPORTED_MEDIA_EXTENSIONS)
+
+def get_image_files(target_dirs=None, recursive=True, sort_by='name_asc', extensions=None):
+    """
+    画像ディレクトリを探索し、指定された（または許可された）拡張子の画像ファイルパスのリストを返す
     パスはUPLOAD_FOLDERからの相対パス
     """
     img_dir = app.config['UPLOAD_FOLDER']
-    allowed_extensions = app.config['ALLOWED_EXTENSIONS']
+    if extensions is not None:
+        target_extensions = {ext.lower() for ext in extensions}
+    else:
+        target_extensions = app.config['ALLOWED_EXTENSIONS']
     image_files = []
     
     if not os.path.isdir(img_dir):
@@ -104,7 +156,7 @@ def get_image_files(target_dirs=None, recursive=True, sort_by='name_asc'):
                 if 'thumbnails' in dirs:
                     dirs.remove('thumbnails')
                 for filename in files:
-                    if '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions:
+                    if '.' in filename and filename.rsplit('.', 1)[1].lower() in target_extensions:
                         relative_path = os.path.relpath(os.path.join(root, filename), img_dir)
                         image_files.append(relative_path.replace(os.path.sep, '/'))
         else:
@@ -114,7 +166,7 @@ def get_image_files(target_dirs=None, recursive=True, sort_by='name_asc'):
                         continue
                     file_path = os.path.join(normalized_path, filename)
                     if os.path.isfile(file_path):
-                        if '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions:
+                        if '.' in filename and filename.rsplit('.', 1)[1].lower() in target_extensions:
                             relative_path = os.path.relpath(file_path, img_dir)
                             image_files.append(relative_path.replace(os.path.sep, '/'))
             except OSError:
@@ -176,7 +228,7 @@ def get_file_info(filename):
     formatted_mtime = mtime_dt.strftime('%Y-%m-%d %H:%M:%S')
 
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
-    is_video = ext == 'mp4'
+    is_video = is_video_file(filename)
 
     width, height, dimensions_str = None, None, None
     if not is_video:
@@ -291,13 +343,14 @@ def thumbnail(filename):
     if not os.path.exists(img_path):
         abort(404)
 
-    # 動画ファイル（mp4等）の場合はSVGプレースホルダーを返却
-    if filename.lower().endswith('.mp4'):
+    # 動画ファイル（mp4, webm, mov, m4v等）の場合はSVGプレースホルダーを返却
+    if is_video_file(filename):
+        ext_upper = filename.rsplit('.', 1)[-1].upper() if '.' in filename else 'VIDEO'
         video_svg = (
             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">'
             '<rect width="128" height="128" rx="8" fill="#2c3e50"/>'
             '<polygon points="48,36 48,92 92,64" fill="#ecf0f1"/>'
-            '<text x="64" y="112" font-size="12" fill="#bdc3c7" text-anchor="middle" font-family="sans-serif">MP4</text>'
+            f'<text x="64" y="112" font-size="12" fill="#bdc3c7" text-anchor="middle" font-family="sans-serif">{ext_upper}</text>'
             '</svg>'
         )
         return Response(video_svg, mimetype='image/svg+xml')
@@ -336,7 +389,21 @@ def slideshow(filename):
     画像ファイルのスライドショーを表示するページ
     <path:filename> を使用してサブフォルダ内のファイルに対応
     """
-    image_files = get_image_files()
+    from flask import flash, redirect, url_for
+    img_dir = app.config['UPLOAD_FOLDER']
+    img_path = os.path.normpath(os.path.join(img_dir, filename))
+    if not img_path.startswith(os.path.normpath(img_dir)) or not os.path.exists(img_path):
+        abort(404)
+
+    active_exts = get_active_slideshow_extensions()
+
+    # 開始ファイル自身の拡張子がスライドショー対象かチェック
+    file_ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    if file_ext not in active_exts:
+        flash(f'拡張子「.{file_ext}」はスライドショー対象外に設定されています。', 'warning')
+        return redirect(url_for('image_display', filename=filename))
+
+    image_files = get_image_files(extensions=active_exts)
 
     # 開始ファイル名がリストに存在するか確認し、存在しない場合は404エラー
     if filename not in image_files:
@@ -378,7 +445,8 @@ def slideshow_custom():
     
     recursive = request.args.get('recursive', 'true').lower() == 'true'
     
-    image_files = get_image_files(target_dirs=target_dirs, recursive=recursive)
+    active_exts = get_active_slideshow_extensions()
+    image_files = get_image_files(target_dirs=target_dirs, recursive=recursive, extensions=active_exts)
     
     if not image_files:
         flash('指定されたフォルダ内に画像ファイルが見つかりませんでした。', 'warning')
@@ -409,12 +477,23 @@ def slideshow_config():
     current_duration = app.config.get('SLIDESHOW_DURATION', 3000)
     current_loop_enabled = app.config.get('SLIDESHOW_LOOP', True)
     current_shuffle_enabled = app.config.get('SLIDESHOW_SHUFFLE', False)
+
+    available_extensions = get_available_extensions()
+    configured_extensions = app.config.get('SLIDESHOW_EXTENSIONS')
+    if configured_extensions is None:
+        # 初期状態: フォルダ内の全検出拡張子をすべて選択状態とする
+        current_extensions = set(available_extensions)
+    else:
+        current_extensions = set(configured_extensions)
+
     return render_template(
         'slideshow_config.html', 
         title='スライドショー設定', 
         current_duration=current_duration, 
         current_loop_enabled=current_loop_enabled,
-        current_shuffle_enabled=current_shuffle_enabled
+        current_shuffle_enabled=current_shuffle_enabled,
+        available_extensions=available_extensions,
+        current_extensions=current_extensions
     )
 
 @app.route('/slideshow/config/save', methods=['POST'])
@@ -429,10 +508,22 @@ def save_slideshow_config():
         duration = int(request.form.get('duration', 3000))
         if duration < 500: # 最小値を設定
             flash('表示時間は500ミリ秒以上にしてください。', 'warning')
+            return redirect(url_for('slideshow_config'))
         else:
             app.config['SLIDESHOW_DURATION'] = duration
     except (ValueError, TypeError):
         flash('無効な数値が入力されました。', 'danger')
+        return redirect(url_for('slideshow_config'))
+
+    # 拡張子設定の保存とバリデーション
+    available_exts = set(get_available_extensions())
+    if available_exts:
+        selected_exts = request.form.getlist('extensions')
+        valid_selected = {ext.lower() for ext in selected_exts if ext.lower() in available_exts}
+        if not valid_selected:
+            flash('スライドショー対象の拡張子を少なくとも1つ選択してください。', 'warning')
+            return redirect(url_for('slideshow_config'))
+        app.config['SLIDESHOW_EXTENSIONS'] = valid_selected
 
     # ループ設定の保存
     loop_enabled = 'loop_enabled' in request.form

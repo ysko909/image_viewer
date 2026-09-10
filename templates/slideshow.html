@@ -78,6 +78,20 @@
     let timer = null; // スライド切り替え用タイマーID
     let isPlaying = true;
 
+    // 動画拡張子セット
+    const videoExtensions = new Set(['mp4', 'webm', 'mov', 'm4v']);
+
+    /**
+     * ファイル名が動画かどうか判定する
+     * @param {string} fn
+     * @returns {boolean}
+     */
+    function isVideoFile(fn) {
+        if (!fn || !fn.includes('.')) return false;
+        const ext = fn.split('.').pop().toLowerCase();
+        return videoExtensions.has(ext);
+    }
+
     // --- 補助関数 ---
 
     /**
@@ -115,7 +129,7 @@
     function preloadImageByIndex(idx) {
         if (idx < 0 || idx >= image_files.length) return;
         const fn = image_files[idx];
-        if (!fn.toLowerCase().endsWith('.mp4')) {
+        if (!isVideoFile(fn)) {
             const img = new Image();
             img.src = `${base_img_url}${fn}`;
         }
@@ -136,7 +150,7 @@
 
         currentIndex = index;
         const filename = image_files[index];
-        const isVideo = filename.toLowerCase().endsWith('.mp4');
+        const isVideo = isVideoFile(filename);
         const mediaUrl = `${base_img_url}${filename}`;
 
         filenameDisplay.textContent = filename;
@@ -225,7 +239,7 @@
         toggleButton.textContent = '一時停止';
 
         const filename = image_files[currentIndex];
-        const isVideo = filename.toLowerCase().endsWith('.mp4');
+        const isVideo = isVideoFile(filename);
 
         if (isVideo) {
             videoElement.muted = true;

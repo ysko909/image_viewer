@@ -21,11 +21,32 @@
                     </label>
                 </div>
 
-                <div class="form-check mb-4">
+                <div class="form-check mb-3">
                     <input class="form-check-input" type="checkbox" id="shuffle_enabled" name="shuffle_enabled" {% if current_shuffle_enabled %}checked{% endif %}>
                     <label class="form-check-label" for="shuffle_enabled">
                         スライドショーをシャッフルする
                     </label>
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label d-block fw-bold">対象ファイルの拡張子</label>
+                    {% if available_extensions %}
+                        <div class="form-text mb-2">スライドショーで再生するファイルの拡張子を選択します（フォルダ内に実在する拡張子のみ表示）。</div>
+                        <div class="d-flex flex-wrap gap-3">
+                            {% for ext in available_extensions %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="ext_{{ ext }}" name="extensions" value="{{ ext }}" {% if ext in current_extensions %}checked{% endif %}>
+                                <label class="form-check-label" for="ext_{{ ext }}">
+                                    .{{ ext }}
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="alert alert-info py-2 mb-0 small">
+                            保存フォルダ内に対象となる画像・動画ファイルが見つかりません。
+                        </div>
+                    {% endif %}
                 </div>
 
                 <button type="submit" class="btn btn-primary">設定を保存</button>
