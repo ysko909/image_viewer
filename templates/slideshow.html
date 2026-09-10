@@ -3,10 +3,13 @@
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
-<div class="container text-center mt-4">
-    <h2 id="filename-display" class="mb-3"></h2>
+<div class="container text-center mt-3">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h5 id="filename-display" class="mb-0 text-truncate" style="max-width: 75%;"></h5>
+        <span id="slide-indicator" class="badge bg-secondary fs-6">0 / 0</span>
+    </div>
 
-    <div class="slideshow-container position-relative d-inline-block">
+    <div class="slideshow-container position-relative d-inline-block" id="slideshow-box">
         {# メディア表示エリア #}
         <div id="media-wrapper" style="max-height: 75vh; border-radius: 8px; overflow: hidden; display: inline-block;">
             <a id="image-link" href="">
@@ -16,14 +19,31 @@
         </div>
 
         {# 前へボタン #}
-        <a class="prev" onclick="plusSlides(-1)">&#10094;</a>
+        <a class="prev" onclick="plusSlides(-1)" title="前へ (←)">&#10094;</a>
         {# 次へボタン #}
-        <a class="next" onclick="plusSlides(1)">&#10095;</a>
+        <a class="next" onclick="plusSlides(1)" title="次へ (→)">&#10095;</a>
     </div>
 
-    <div class="mt-3">
+    <div class="mt-3 d-flex flex-wrap justify-content-center align-items-center gap-2">
         <button id="toggle-play" class="btn btn-secondary">一時停止</button>
-        <a href="{{ url_for('image_list') }}" class="btn btn-primary">一覧に戻る</a>
+        <button id="toggle-fullscreen" class="btn btn-outline-dark" title="全画面表示 (F)">全画面表示</button>
+        
+        <div class="d-inline-flex align-items-center gap-1 ms-2">
+            <label for="speed-select" class="form-label mb-0 small text-muted">表示間隔:</label>
+            <select id="speed-select" class="form-select form-select-sm" style="width: auto;">
+                <option value="1000">1秒</option>
+                <option value="2000">2秒</option>
+                <option value="3000">3秒</option>
+                <option value="5000">5秒</option>
+                <option value="10000">10秒</option>
+            </select>
+        </div>
+
+        <a href="{{ url_for('image_list') }}" class="btn btn-primary ms-2">一覧に戻る</a>
+    </div>
+
+    <div class="mt-2 text-muted small">
+        <kbd>←</kbd> / <kbd>→</kbd> : 前へ/次へ &nbsp;|&nbsp; <kbd>Space</kbd> : 再生/一時停止 &nbsp;|&nbsp; <kbd>F</kbd> : 全画面切替
     </div>
 </div>
 
@@ -45,10 +65,15 @@
     const imageLink = document.getElementById('image-link');
     const filenameDisplay = document.getElementById('filename-display');
     const toggleButton = document.getElementById('toggle-play');
+    const indicatorElement = document.getElementById('slide-indicator');
+    const fullscreenButton = document.getElementById('toggle-fullscreen');
+    const speedSelect = document.getElementById('speed-select');
+    const slideshowBox = document.getElementById('slideshow-box');
 
     // --- データ取得と初期化 ---
     const data = JSON.parse(document.getElementById('slideshow-data').textContent);
-    const { image_files, start_index, duration, loop, base_img_url } = data;
+    const { image_files, start_index, loop, base_img_url } = data;
+    let duration = data.duration;
     let currentIndex = start_index;
     let timer = null; // スライド切り替え用タイマーID
     let isPlaying = true;
@@ -66,9 +91,12 @@
     }
 
     /**
-     * 全画面表示になっている場合は安全に解除する
+     * 全画面表示になっている場合は安全に解除する（コンテナ全画面時は除く）
      */
     function exitFullscreenIfActive() {
+        if (document.fullscreenElement === slideshowBox || document.webkitFullscreenElement === slideshowBox) {
+            return;
+        }
         if (document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement) {
             if (document.exitFullscreen) {
                 document.exitFullscreen().catch(function() {});
@@ -112,6 +140,9 @@
         const mediaUrl = `${base_img_url}${filename}`;
 
         filenameDisplay.textContent = filename;
+        if (indicatorElement) {
+            indicatorElement.textContent = `${index + 1} / ${image_files.length}`;
+        }
 
         // 次と前の画像ファイルをプリロードして表示の遅延を抑止
         if (image_files.length > 1) {
@@ -262,6 +293,83 @@
     // --- イベントリスナー ---
     toggleButton.addEventListener('click', togglePlay);
 
+    // 全画面表示の切り替え
+    function toggleFullscreen() {
+        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+            if (slideshowBox.requestFullscreen) {
+                slideshowBox.requestFullscreen().catch(function() {});
+            } else if (slideshowBox.webkitRequestFullscreen) {
+                slideshowBox.webkitRequestFullscreen();
+            }
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen().catch(function() {});
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            }
+        }
+    }
+
+    if (fullscreenButton) {
+        fullscreenButton.addEventListener('click', toggleFullscreen);
+    }
+
+    function handleFullscreenChange() {
+        if (document.fullscreenElement || document.webkitFullscreenElement) {
+            if (fullscreenButton) fullscreenButton.textContent = '全画面解除';
+        } else {
+            if (fullscreenButton) fullscreenButton.textContent = '全画面表示';
+        }
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+
+    // 画面上での表示間隔調整
+    if (speedSelect) {
+        // 現在の設定時間をセレクトボックスに反映
+        let matched = false;
+        for (let i = 0; i < speedSelect.options.length; i++) {
+            if (parseInt(speedSelect.options[i].value, 10) === duration) {
+                speedSelect.selectedIndex = i;
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            const customOpt = new Option(`${duration / 1000}秒`, duration);
+            customOpt.selected = true;
+            speedSelect.add(customOpt);
+        }
+
+        speedSelect.addEventListener('change', function(e) {
+            duration = parseInt(e.target.value, 10);
+            if (isPlaying && timer !== null) {
+                clearSlideTimer();
+                timer = setTimeout(nextImage, duration);
+            }
+        });
+    }
+
+    // キーボードショートカット (左右: 移動, Space: 一時停止/再生, F: 全画面)
+    window.addEventListener('keydown', function(e) {
+        if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+            return;
+        }
+        if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            plusSlides(1);
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            plusSlides(-1);
+        } else if (e.key === ' ' || e.code === 'Space') {
+            e.preventDefault();
+            togglePlay();
+        } else if (e.key === 'f' || e.key === 'F') {
+            e.preventDefault();
+            toggleFullscreen();
+        }
+    });
+
     // 動画再生終了時に自動的に次のメディアへ進む
     videoElement.addEventListener('ended', function() {
         if (isPlaying) {
@@ -288,6 +396,33 @@
     .slideshow-container {
         position: relative;
         margin: auto;
+    }
+
+    /* 全画面モード時のスタイリング */
+    #slideshow-box:fullscreen {
+        background-color: #000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100vw;
+        height: 100vh;
+    }
+    #slideshow-box:-webkit-full-screen {
+        background-color: #000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100vw;
+        height: 100vh;
+    }
+    #slideshow-box:fullscreen #media-wrapper,
+    #slideshow-box:fullscreen #slideshow-image,
+    #slideshow-box:fullscreen #slideshow-video,
+    #slideshow-box:-webkit-full-screen #media-wrapper,
+    #slideshow-box:-webkit-full-screen #slideshow-image,
+    #slideshow-box:-webkit-full-screen #slideshow-video {
+        max-height: 96vh !important;
+        max-width: 96vw !important;
     }
 
     .prev, .next {

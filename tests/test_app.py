@@ -59,6 +59,10 @@ def test_slideshow_page(client):
     assert 'class="slideshow-container' in response.data.decode('utf-8')
     # JSONデータに画像ファイル名が含まれていることを確認
     assert b'"test_fixture_image.png"' in response.data
+    # インジケーター、全画面ボタン、速度選択要素の存在確認
+    assert 'id="slide-indicator"' in response.data.decode('utf-8')
+    assert 'id="toggle-fullscreen"' in response.data.decode('utf-8')
+    assert 'id="speed-select"' in response.data.decode('utf-8')
 
     response = client.get('/slideshow/non_existent_image.jpg')
     assert response.status_code == 404
