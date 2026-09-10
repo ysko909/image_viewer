@@ -212,3 +212,57 @@ def test_video_playback(client):
     finally:
         if os.path.exists(video_path):
             os.remove(video_path)
+
+
+def test_thumbnail_generation(client):
+    """
+    サムネイル生成エンドポイントの動作（画像・動画・キャッシュ・セキュリティ）をテスト
+    """
+    from PIL import Image
+    import shutil
+
+    img_dir = app.config['UPLOAD_FOLDER']
+    thumb_dir = app.config['THUMBNAIL_FOLDER']
+
+    real_img_name = 'test_real_image.png'
+    real_img_path = os.path.join(img_dir, real_img_name)
+    im = Image.new('RGB', (200, 150), color='blue')
+    im.save(real_img_path, 'PNG')
+
+    video_name = 'test_thumb_video.mp4'
+    video_path = os.path.join(img_dir, video_name)
+    with open(video_path, 'w') as f:
+        f.write('dummy video')
+
+    try:
+        # 1. 実際の画像のサムネイル生成
+        res = client.get(f'/thumbnail/{real_img_name}')
+        assert res.status_code == 200
+        assert res.mimetype in ['image/png', 'image/jpeg']
+
+        # 2. キャッシュからの返却確認
+        cached_file = os.path.join(thumb_dir, real_img_name)
+        assert os.path.exists(cached_file)
+        res_cached = client.get(f'/thumbnail/{real_img_name}')
+        assert res_cached.status_code == 200
+
+        # 3. 動画ファイルのサムネイル（SVGアイコン返却）
+        res_video = client.get(f'/thumbnail/{video_name}')
+        assert res_video.status_code == 200
+        assert 'svg' in res_video.mimetype
+
+        # 4. 存在しないファイル
+        res_404 = client.get('/thumbnail/non_existent.png')
+        assert res_404.status_code == 404
+
+        # 5. パストラバーサル防止
+        res_traversal = client.get('/thumbnail/../app.py')
+        assert res_traversal.status_code == 404
+
+    finally:
+        if os.path.exists(real_img_path):
+            os.remove(real_img_path)
+        if os.path.exists(video_path):
+            os.remove(video_path)
+        if os.path.exists(thumb_dir):
+            shutil.rmtree(thumb_dir)

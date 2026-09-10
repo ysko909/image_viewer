@@ -81,6 +81,19 @@
     // --- メイン関数 ---
 
     /**
+     * 指定されたインデックスのメディアをバックグラウンドで事前読み込み（プリロード）する
+     * @param {number} idx - プリロードするメディアのインデックス
+     */
+    function preloadImageByIndex(idx) {
+        if (idx < 0 || idx >= image_files.length) return;
+        const fn = image_files[idx];
+        if (!fn.toLowerCase().endsWith('.mp4')) {
+            const img = new Image();
+            img.src = `${base_img_url}${fn}`;
+        }
+    }
+
+    /**
      * 指定されたインデックスのメディア（画像または動画）を表示する
      * @param {number} index - 表示するメディアのインデックス
      */
@@ -99,6 +112,14 @@
         const mediaUrl = `${base_img_url}${filename}`;
 
         filenameDisplay.textContent = filename;
+
+        // 次と前の画像ファイルをプリロードして表示の遅延を抑止
+        if (image_files.length > 1) {
+            const nextIdx = (index + 1) % image_files.length;
+            const prevIdx = (index - 1 + image_files.length) % image_files.length;
+            preloadImageByIndex(nextIdx);
+            preloadImageByIndex(prevIdx);
+        }
 
         if (isVideo) {
             // 画像表示を隠す

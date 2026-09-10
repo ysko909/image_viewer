@@ -1,7 +1,8 @@
 # image_viewer/app.py
 import os
 import random
-from flask import Flask, render_template, url_for, abort, redirect
+from flask import Flask, render_template, url_for, abort, redirect, send_file, Response
+from PIL import Image
 
 # Flaskアプリケーションインスタンスを作成
 # instance_relative_config=True にすると、インスタンスフォルダから設定を読み込める（今回は使わないが一般的な設定）
@@ -58,7 +59,9 @@ def get_image_files(target_dirs=None, recursive=True):
             continue
 
         if recursive:
-            for root, _, files in os.walk(normalized_path):
+            for root, dirs, files in os.walk(normalized_path):
+                if 'thumbnails' in dirs:
+                    dirs.remove('thumbnails')
                 for filename in files:
                     if '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions:
                         relative_path = os.path.relpath(os.path.join(root, filename), img_dir)
@@ -66,6 +69,8 @@ def get_image_files(target_dirs=None, recursive=True):
         else:
             try:
                 for filename in os.listdir(normalized_path):
+                    if filename == 'thumbnails':
+                        continue
                     file_path = os.path.join(normalized_path, filename)
                     if os.path.isfile(file_path):
                         if '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions:
@@ -135,6 +140,62 @@ def image_display(filename):
         abort(404) # ファイルが存在しない場合は404エラーを返す
 
     return render_template('image_display.html', filename=filename, title=f'{filename} - 画像表示')
+
+@app.route('/thumbnail/<path:filename>')
+def thumbnail(filename):
+    """
+    指定された画像・動画ファイルのサムネイルを返却する。
+    画像ファイルはPillowを用いて指定サイズに縮小生成しキャッシュする。
+    動画ファイルの場合はSVGアイコンを返却する。
+    """
+    img_dir = app.config['UPLOAD_FOLDER']
+    img_path = os.path.normpath(os.path.join(img_dir, filename))
+
+    # ディレクトリトラバーサル防止
+    if not img_path.startswith(os.path.normpath(img_dir)):
+        abort(404)
+
+    if not os.path.exists(img_path):
+        abort(404)
+
+    # 動画ファイル（mp4等）の場合はSVGプレースホルダーを返却
+    if filename.lower().endswith('.mp4'):
+        video_svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">'
+            '<rect width="128" height="128" rx="8" fill="#2c3e50"/>'
+            '<polygon points="48,36 48,92 92,64" fill="#ecf0f1"/>'
+            '<text x="64" y="112" font-size="12" fill="#bdc3c7" text-anchor="middle" font-family="sans-serif">MP4</text>'
+            '</svg>'
+        )
+        return Response(video_svg, mimetype='image/svg+xml')
+
+    thumb_dir = app.config['THUMBNAIL_FOLDER']
+    thumb_path = os.path.normpath(os.path.join(thumb_dir, filename))
+
+    # サムネイルパスのディレクトリトラバーサル防止
+    if not thumb_path.startswith(os.path.normpath(thumb_dir)):
+        abort(404)
+
+    # キャッシュが存在し、元画像より新しい場合はキャッシュを返却
+    if os.path.exists(thumb_path):
+        try:
+            if os.path.getmtime(thumb_path) >= os.path.getmtime(img_path):
+                return send_file(thumb_path)
+        except OSError:
+            pass
+
+    # サムネイル生成
+    try:
+        os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
+        with Image.open(img_path) as im:
+            thumb_size = app.config.get('THUMBNAIL_SIZE', (128, 128))
+            im.thumbnail(thumb_size)
+            save_format = im.format if im.format else 'PNG'
+            im.save(thumb_path, format=save_format)
+        return send_file(thumb_path)
+    except Exception:
+        # Pillowで開けない（ダミーファイル等）場合は元ファイルをそのまま返却
+        return send_file(img_path)
 
 @app.route('/slideshow/<path:filename>')
 def slideshow(filename):

@@ -63,12 +63,44 @@
     {% endif %}
 
     {% if image_files %}
-        <h5 class="mb-3">画像ファイル一覧</h5>
-        <ul>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">画像ファイル一覧 ({{ image_files|length }} 件)</h5>
+            <div class="btn-group btn-group-sm" role="group" aria-label="表示形式切り替え">
+                <button type="button" class="btn btn-outline-secondary active" id="view-grid-btn">🔲 ギャラリー</button>
+                <button type="button" class="btn btn-outline-secondary" id="view-list-btn">📋 リスト</button>
+            </div>
+        </div>
+
+        <!-- ギャラリー（サムネイル）表示 -->
+        <div id="gallery-view" class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-6 g-3 mb-4">
             {% for filename in image_files %}
-                <li><a href="{{ url_for('image_display', filename=filename) }}">{{ filename }}</a></li>
+            <div class="col">
+                <div class="card h-100 shadow-sm text-center">
+                    <a href="{{ url_for('image_display', filename=filename) }}" class="d-flex align-items-center justify-content-center p-2 bg-light text-decoration-none" style="height: 140px;">
+                        <img src="{{ url_for('thumbnail', filename=filename) }}" alt="{{ filename }}" loading="lazy" class="img-fluid rounded" style="max-height: 120px; max-width: 100%; object-fit: contain;">
+                    </a>
+                    <div class="card-body p-2 d-flex flex-column justify-content-between">
+                        <small class="card-text text-truncate d-block mb-1" title="{{ filename }}">
+                            <a href="{{ url_for('image_display', filename=filename) }}" class="text-dark text-decoration-none">{{ filename }}</a>
+                        </small>
+                        <a href="{{ url_for('slideshow', filename=filename) }}" class="btn btn-outline-primary btn-sm py-0" style="font-size: 0.75rem;">再生</a>
+                    </div>
+                </div>
+            </div>
             {% endfor %}
-        </ul>
+        </div>
+
+        <!-- リスト表示 -->
+        <div id="list-view" class="d-none mb-4">
+            <ul class="list-group">
+                {% for filename in image_files %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <a href="{{ url_for('image_display', filename=filename) }}">{{ filename }}</a>
+                        <a href="{{ url_for('slideshow', filename=filename) }}" class="btn btn-outline-primary btn-sm">スライドショー</a>
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
     {% else %}
         <p>画像ファイルが見つかりませんでした。</p>
     {% endif %}
@@ -119,5 +151,27 @@
                 checkbox.checked = false;
             });
         });
+
+        // ギャラリー・リスト表示切り替え
+        const gridBtn = document.getElementById('view-grid-btn');
+        const listBtn = document.getElementById('view-list-btn');
+        const galleryView = document.getElementById('gallery-view');
+        const listView = document.getElementById('list-view');
+
+        if (gridBtn && listBtn && galleryView && listView) {
+            gridBtn.addEventListener('click', function() {
+                gridBtn.classList.add('active');
+                listBtn.classList.remove('active');
+                galleryView.classList.remove('d-none');
+                listView.classList.add('d-none');
+            });
+
+            listBtn.addEventListener('click', function() {
+                listBtn.classList.add('active');
+                gridBtn.classList.remove('active');
+                listView.classList.remove('d-none');
+                galleryView.classList.add('d-none');
+            });
+        }
     </script>
 {% endblock %}
