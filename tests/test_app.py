@@ -270,3 +270,52 @@ def test_thumbnail_generation(client):
             os.remove(video_path)
         if os.path.exists(thumb_dir):
             shutil.rmtree(thumb_dir)
+
+
+def test_image_search_sort_pagination(client):
+    """
+    画像一覧での検索・ソート・ページネーションの動作をテスト
+    """
+    img_dir = app.config['UPLOAD_FOLDER']
+    file_a = os.path.join(img_dir, 'alpha_test.png')
+    file_b = os.path.join(img_dir, 'beta_test.png')
+    
+    with open(file_a, 'w') as f:
+        f.write('a' * 100)
+    with open(file_b, 'w') as f:
+        f.write('b' * 500)
+
+    try:
+        # 1. 検索機能: 'alpha' で絞り込み
+        res_search = client.get('/images?q=alpha')
+        assert res_search.status_code == 200
+        assert 'alpha_test.png' in res_search.data.decode('utf-8')
+        assert 'beta_test.png' not in res_search.data.decode('utf-8')
+
+        # 2. 検索機能: マッチしないキーワード
+        res_none = client.get('/images?q=non_matching_keyword')
+        assert res_none.status_code == 200
+        assert '画像ファイルが見つかりませんでした。' in res_none.data.decode('utf-8')
+
+        # 3. ソート機能: 名前降順
+        res_sort_desc = client.get('/images?sort=name_desc')
+        assert res_sort_desc.status_code == 200
+        content = res_sort_desc.data.decode('utf-8')
+        pos_b = content.find('beta_test.png')
+        pos_a = content.find('alpha_test.png')
+        assert pos_b != -1 and pos_a != -1
+        assert pos_b < pos_a
+
+        # 4. ページネーション: 1ページ1件
+        res_p1 = client.get('/images?per_page=1&page=1')
+        assert res_p1.status_code == 200
+        assert 'ページ移動' in res_p1.data.decode('utf-8')
+
+        res_p2 = client.get('/images?per_page=1&page=2')
+        assert res_p2.status_code == 200
+
+    finally:
+        if os.path.exists(file_a):
+            os.remove(file_a)
+        if os.path.exists(file_b):
+            os.remove(file_b)

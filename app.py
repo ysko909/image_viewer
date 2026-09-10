@@ -1,7 +1,7 @@
 # image_viewer/app.py
 import os
 import random
-from flask import Flask, render_template, url_for, abort, redirect, send_file, Response
+from flask import Flask, render_template, url_for, abort, redirect, send_file, Response, request
 from PIL import Image
 
 # Flaskアプリケーションインスタンスを作成
@@ -31,8 +31,49 @@ app.config.setdefault('MAX_CONTENT_LENGTH', 16 * 1024 * 1024) # 例: 16MB
 app.config.setdefault('ALLOWED_EXTENSIONS', {'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4'})
 app.config.setdefault('THUMBNAIL_SIZE', (128, 128)) # サムネイルの最大サイズ
 
-# --- ヘルパー関数 ---
-def get_image_files(target_dirs=None, recursive=True):
+def sort_image_files(image_files, sort_by='name_asc'):
+    """
+    画像ファイルリストを指定された条件でソートする
+    """
+    img_dir = app.config['UPLOAD_FOLDER']
+    if sort_by == 'name_desc':
+        return sorted(image_files, reverse=True)
+    elif sort_by == 'date_desc':
+        def get_mtime(f):
+            p = os.path.join(img_dir, f)
+            try:
+                return os.path.getmtime(p)
+            except OSError:
+                return 0
+        return sorted(image_files, key=get_mtime, reverse=True)
+    elif sort_by == 'date_asc':
+        def get_mtime(f):
+            p = os.path.join(img_dir, f)
+            try:
+                return os.path.getmtime(p)
+            except OSError:
+                return 0
+        return sorted(image_files, key=get_mtime)
+    elif sort_by == 'size_desc':
+        def get_size(f):
+            p = os.path.join(img_dir, f)
+            try:
+                return os.path.getsize(p)
+            except OSError:
+                return 0
+        return sorted(image_files, key=get_size, reverse=True)
+    elif sort_by == 'size_asc':
+        def get_size(f):
+            p = os.path.join(img_dir, f)
+            try:
+                return os.path.getsize(p)
+            except OSError:
+                return 0
+        return sorted(image_files, key=get_size)
+    else:
+        return sorted(image_files)
+
+def get_image_files(target_dirs=None, recursive=True, sort_by='name_asc'):
     """
     画像ディレクトリを探索し、許可された拡張子の画像ファイルパスのリストを返す
     パスはUPLOAD_FOLDERからの相対パス
@@ -81,8 +122,7 @@ def get_image_files(target_dirs=None, recursive=True):
 
     # 重複排除とソート
     image_files = list(set(image_files))
-    image_files.sort()
-    return image_files
+    return sort_image_files(image_files, sort_by=sort_by)
 
 def get_directories():
     """
@@ -116,11 +156,54 @@ def index():
 @app.route('/images')
 def image_list():
     """
-    画像ファイル一覧を表示するページ
+    画像ファイル一覧を表示するページ（検索・ソート・ページネーション対応）
     """
-    image_files = get_image_files()
+    q = request.args.get('q', '').strip()
+    sort_by = request.args.get('sort', 'name_asc')
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 24, type=int)
+    if page < 1:
+        page = 1
+    if per_page < 1:
+        per_page = 24
+
+    all_files = get_image_files(sort_by=sort_by)
+    if q:
+        filtered_files = [f for f in all_files if q.lower() in f.lower()]
+    else:
+        filtered_files = all_files
+
+    total_items = len(filtered_files)
+    total_pages = max(1, (total_items + per_page - 1) // per_page)
+    if page > total_pages and total_items > 0:
+        page = total_pages
+
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    paginated_files = filtered_files[start_idx:end_idx]
+
+    pagination = {
+        'page': page,
+        'per_page': per_page,
+        'total_items': total_items,
+        'total_pages': total_pages,
+        'has_prev': page > 1,
+        'has_next': page < total_pages,
+        'prev_page': page - 1,
+        'next_page': page + 1
+    }
+
     directories = get_directories()
-    return render_template('image_list.html', image_files=image_files, directories=directories, title='画像ファイル一覧')
+    return render_template(
+        'image_list.html',
+        image_files=paginated_files,
+        all_image_count=len(all_files),
+        directories=directories,
+        pagination=pagination,
+        q=q,
+        sort=sort_by,
+        title='画像ファイル一覧'
+    )
 
 @app.route('/image/<path:filename>')
 def image_display(filename):
