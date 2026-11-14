@@ -172,3 +172,7 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Media thumbnails cache
+static/img/thumbnails/
+
