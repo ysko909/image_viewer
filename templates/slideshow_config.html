@@ -28,6 +28,14 @@
                     </label>
                 </div>
 
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="interleave_enabled" name="interleave_enabled" {% if current_interleave_enabled %}checked{% endif %}>
+                    <label class="form-check-label" for="interleave_enabled">
+                        フォルダ間交互再生（各フォルダから順に1枚ずつ表示）
+                    </label>
+                    <div class="form-text">複数フォルダが存在する場合に発動し、各フォルダのメディアを交互（Aの1枚目→Bの1枚目→…）に再生します。</div>
+                </div>
+
                 <div class="mb-4">
                     <label class="form-label d-block fw-bold">対象ファイルの拡張子</label>
                     {% if available_extensions %}

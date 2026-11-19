@@ -48,10 +48,17 @@
                     </div>
                 </div>
                 
-                <div class="form-check mb-3">
+                <div class="form-check mb-2">
                     <input class="form-check-input" type="checkbox" id="recursive" name="recursive" value="true" checked>
                     <label class="form-check-label" for="recursive">
                         サブフォルダ内の画像も含める
+                    </label>
+                </div>
+
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="interleave" name="interleave" value="true" {% if config.get('SLIDESHOW_INTERLEAVE') %}checked{% endif %}>
+                    <label class="form-check-label" for="interleave">
+                        フォルダ間交互再生（各フォルダから順に1枚ずつ表示）
                     </label>
                 </div>
                 

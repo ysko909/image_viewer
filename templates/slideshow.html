@@ -54,7 +54,10 @@
     "start_index": start_index,
     "duration": slideshow_duration,
     "loop": slideshow_loop,
-    "base_img_url": url_for('static', filename='img/')
+    "base_img_url": url_for('static', filename='img/'),
+    "shuffle": slideshow_shuffle if slideshow_shuffle is defined else false,
+    "interleave": is_interleaved if is_interleaved is defined else false,
+    "folder_groups": folder_groups if folder_groups is defined else none
 } | tojson }}
 </script>
 
@@ -72,7 +75,8 @@
 
     // --- データ取得と初期化 ---
     const data = JSON.parse(document.getElementById('slideshow-data').textContent);
-    const { image_files, start_index, loop, base_img_url } = data;
+    const { start_index, loop, base_img_url, shuffle, interleave, folder_groups } = data;
+    let image_files = [...(data.image_files || [])];
     let duration = data.duration;
     let currentIndex = start_index;
     let timer = null; // スライド切り替え用タイマーID
@@ -215,6 +219,43 @@
     }
 
     /**
+     * フォルダ群から再シャッフルおよびインターリーブしたメディアリストを生成する
+     * @param {Array<Array<string>>} groups
+     * @param {boolean} doShuffle
+     * @returns {Array<string>}
+     */
+    function generateInterleavedList(groups, doShuffle) {
+        if (!groups || groups.length === 0) return [];
+        const processed = groups.map(g => {
+            const copy = [...g];
+            if (doShuffle) {
+                for (let i = copy.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    const temp = copy[i];
+                    copy[i] = copy[j];
+                    copy[j] = temp;
+                }
+            }
+            return copy;
+        });
+
+        let maxLen = 0;
+        for (const g of processed) {
+            if (g.length > maxLen) maxLen = g.length;
+        }
+
+        const result = [];
+        for (let i = 0; i < maxLen; i++) {
+            for (const g of processed) {
+                if (i < g.length) {
+                    result.push(g[i]);
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
      * スライドショーを次のメディアに進める
      */
     function nextImage() {
@@ -222,6 +263,10 @@
 
         if (nextIndex >= image_files.length) {
             if (loop) {
+                if (interleave && shuffle && folder_groups && folder_groups.length > 0) {
+                    // ループ時、各フォルダ内を都度再シャッフルして新しい順序でインターリーブ再生
+                    image_files = generateInterleavedList(folder_groups, true);
+                }
                 nextIndex = 0;
             } else {
                 stopSlideshow();

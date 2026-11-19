@@ -22,6 +22,8 @@ app.config.setdefault('SLIDESHOW_DURATION', 3000)
 app.config.setdefault('SLIDESHOW_LOOP', True)
 # スライドショーのシャッフル設定 (デフォルトは無効)
 app.config.setdefault('SLIDESHOW_SHUFFLE', False)
+# スライドショーのフォルダ間交互再生（ラウンドロビン）設定 (デフォルトは無効)
+app.config.setdefault('SLIDESHOW_INTERLEAVE', False)
 # スライドショー対象拡張子 (デフォルトはNone: フォルダ内の全検出拡張子)
 app.config.setdefault('SLIDESHOW_EXTENSIONS', None)
 
@@ -195,6 +197,78 @@ def get_directories():
             
     directories.sort()
     return directories
+
+def get_folder_groups(target_dirs=None, recursive=True, extensions=None):
+    """
+    対象ディレクトリから、インターリーブ（ラウンドロビン）判定用のフォルダグループ群を抽出する。
+    戻り値: (is_interleaved: bool, folder_media_lists: list[list[str]])
+    フォルダが2つ以上存在し、それぞれにメディアが含まれる場合のみ is_interleaved=True となる。
+    """
+    img_dir = app.config['UPLOAD_FOLDER']
+    if not os.path.isdir(img_dir):
+        return False, []
+
+    # 1. target_dirs が明示的に2つ以上指定されている場合
+    if target_dirs and len(target_dirs) > 1:
+        groups = []
+        for d in sorted(target_dirs):
+            files = get_image_files(target_dirs=[d], recursive=recursive, extensions=extensions)
+            if files:
+                groups.append(files)
+        if len(groups) >= 2:
+            return True, groups
+        return False, groups
+
+    # 2. target_dirs が指定されていない、または単一の場合
+    base_dir = target_dirs[0] if (target_dirs and target_dirs[0]) else ''
+    base_abs = os.path.normpath(os.path.join(img_dir, base_dir))
+    if not base_abs.startswith(os.path.normpath(img_dir)) or not os.path.isdir(base_abs):
+        return False, []
+
+    # 直下のサブディレクトリ一覧を取得
+    try:
+        subdirs = sorted([
+            d for d in os.listdir(base_abs)
+            if os.path.isdir(os.path.join(base_abs, d)) and d != 'thumbnails' and not d.startswith('.')
+        ])
+    except OSError:
+        subdirs = []
+
+    if len(subdirs) >= 2:
+        groups = []
+        for d in subdirs:
+            sub_rel = os.path.join(base_dir, d).replace(os.path.sep, '/').strip('/')
+            files = get_image_files(target_dirs=[sub_rel], recursive=recursive, extensions=extensions)
+            if files:
+                groups.append(files)
+        if len(groups) >= 2:
+            return True, groups
+
+    return False, []
+
+def interleave_media_groups(groups, shuffle=False):
+    """
+    各フォルダのメディアリスト群から、各フォルダのn枚目を順に配置したインターリープリストを生成する。
+    shuffle=True の場合、各フォルダ内のメディアをランダム順序にしてからインターリーブする。
+    """
+    if not groups:
+        return [], []
+
+    processed_groups = []
+    for g in groups:
+        g_copy = list(g)
+        if shuffle:
+            random.shuffle(g_copy)
+        processed_groups.append(g_copy)
+
+    max_len = max(len(g) for g in processed_groups)
+    interleaved = []
+    for i in range(max_len):
+        for g in processed_groups:
+            if i < len(g):
+                interleaved.append(g[i])
+
+    return interleaved, processed_groups
 
 # --- ルーティングとビュー関数 ---
 
@@ -403,19 +477,29 @@ def slideshow(filename):
         flash(f'拡張子「.{file_ext}」はスライドショー対象外に設定されています。', 'warning')
         return redirect(url_for('image_display', filename=filename))
 
-    image_files = get_image_files(extensions=active_exts)
+    shuffle_enabled = app.config.get('SLIDESHOW_SHUFFLE', False)
+    interleave_enabled = app.config.get('SLIDESHOW_INTERLEAVE', False)
+
+    is_interleaved = False
+    folder_groups = None
+
+    if interleave_enabled:
+        is_interleaved, groups = get_folder_groups(recursive=True, extensions=active_exts)
+        if is_interleaved:
+            image_files, folder_groups = interleave_media_groups(groups, shuffle=shuffle_enabled)
+
+    if not is_interleaved:
+        image_files = get_image_files(extensions=active_exts)
+        # シャッフルが有効な場合、開始画像を先頭に保持したまま残りをシャッフルする
+        if shuffle_enabled and filename in image_files:
+            start_image = filename
+            image_files.remove(start_image)
+            random.shuffle(image_files)
+            image_files.insert(0, start_image)
 
     # 開始ファイル名がリストに存在するか確認し、存在しない場合は404エラー
     if filename not in image_files:
         abort(404)
-
-    # シャッフルが有効な場合、リストを並べ替える
-    if app.config.get('SLIDESHOW_SHUFFLE', False):
-        # 開始画像をリストの先頭に保持したまま、残りをシャッフルする
-        start_image = filename
-        image_files.remove(start_image)
-        random.shuffle(image_files)
-        image_files.insert(0, start_image)
 
     # 開始ファイル名のインデックスを取得
     start_index = image_files.index(filename)
@@ -429,14 +513,17 @@ def slideshow(filename):
         start_index=start_index, 
         title='スライドショー', 
         slideshow_duration=slideshow_duration,
-        slideshow_loop=slideshow_loop
+        slideshow_loop=slideshow_loop,
+        slideshow_shuffle=shuffle_enabled,
+        is_interleaved=is_interleaved,
+        folder_groups=folder_groups
     )
 
 @app.route('/slideshow')
 def slideshow_custom():
     """
     クエリパラメータで指定されたフォルダ内の画像でスライドショーを実行する
-    例: /slideshow?dirs=folder1,folder2&recursive=true
+    例: /slideshow?dirs=folder1,folder2&recursive=true&interleave=true
     """
     from flask import request, flash, redirect, url_for
     
@@ -445,17 +532,34 @@ def slideshow_custom():
     
     recursive = request.args.get('recursive', 'true').lower() == 'true'
     
+    # インターリーブ設定（クエリパラメータ優先、未指定時はapp.config）
+    interleave_arg = request.args.get('interleave')
+    if interleave_arg is not None:
+        interleave_enabled = interleave_arg.lower() in ('true', '1', 'yes')
+    else:
+        interleave_enabled = app.config.get('SLIDESHOW_INTERLEAVE', False)
+
+    shuffle_enabled = app.config.get('SLIDESHOW_SHUFFLE', False)
     active_exts = get_active_slideshow_extensions()
-    image_files = get_image_files(target_dirs=target_dirs, recursive=recursive, extensions=active_exts)
+
+    is_interleaved = False
+    folder_groups = None
+
+    if interleave_enabled:
+        is_interleaved, groups = get_folder_groups(target_dirs=target_dirs, recursive=recursive, extensions=active_exts)
+        if is_interleaved:
+            image_files, folder_groups = interleave_media_groups(groups, shuffle=shuffle_enabled)
+
+    if not is_interleaved:
+        image_files = get_image_files(target_dirs=target_dirs, recursive=recursive, extensions=active_exts)
+        if shuffle_enabled:
+            random.shuffle(image_files)
     
     if not image_files:
         flash('指定されたフォルダ内に画像ファイルが見つかりませんでした。', 'warning')
         return redirect(url_for('image_list'))
         
     start_index = 0
-    
-    if app.config.get('SLIDESHOW_SHUFFLE', False):
-        random.shuffle(image_files)
 
     slideshow_duration = app.config.get('SLIDESHOW_DURATION', 3000)
     slideshow_loop = app.config.get('SLIDESHOW_LOOP', True)
@@ -466,7 +570,10 @@ def slideshow_custom():
         start_index=start_index, 
         title='スライドショー', 
         slideshow_duration=slideshow_duration,
-        slideshow_loop=slideshow_loop
+        slideshow_loop=slideshow_loop,
+        slideshow_shuffle=shuffle_enabled,
+        is_interleaved=is_interleaved,
+        folder_groups=folder_groups
     )
 
 @app.route('/slideshow/config', methods=['GET'])
@@ -477,6 +584,7 @@ def slideshow_config():
     current_duration = app.config.get('SLIDESHOW_DURATION', 3000)
     current_loop_enabled = app.config.get('SLIDESHOW_LOOP', True)
     current_shuffle_enabled = app.config.get('SLIDESHOW_SHUFFLE', False)
+    current_interleave_enabled = app.config.get('SLIDESHOW_INTERLEAVE', False)
 
     available_extensions = get_available_extensions()
     configured_extensions = app.config.get('SLIDESHOW_EXTENSIONS')
@@ -492,6 +600,7 @@ def slideshow_config():
         current_duration=current_duration, 
         current_loop_enabled=current_loop_enabled,
         current_shuffle_enabled=current_shuffle_enabled,
+        current_interleave_enabled=current_interleave_enabled,
         available_extensions=available_extensions,
         current_extensions=current_extensions
     )
@@ -532,6 +641,10 @@ def save_slideshow_config():
     # シャッフル設定の保存
     shuffle_enabled = 'shuffle_enabled' in request.form
     app.config['SLIDESHOW_SHUFFLE'] = shuffle_enabled
+
+    # フォルダ間交互再生設定の保存
+    interleave_enabled = 'interleave_enabled' in request.form
+    app.config['SLIDESHOW_INTERLEAVE'] = interleave_enabled
 
     flash('設定を保存しました。', 'success')
     

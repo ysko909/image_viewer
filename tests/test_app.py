@@ -452,3 +452,150 @@ def test_video_extensions_and_thumbnail(client):
     finally:
         if os.path.exists(mov_file):
             os.remove(mov_file)
+
+
+def test_interleave_media_logic(client):
+    """
+    フォルダ間交互再生（ラウンドロビン）のグループ抽出およびインターリーブ生成ロジックのテスト
+    """
+    from app import get_folder_groups, interleave_media_groups
+    img_dir = app.config['UPLOAD_FOLDER']
+
+    dir_a = os.path.join(img_dir, 'folder_test_a')
+    dir_b = os.path.join(img_dir, 'folder_test_b')
+    os.makedirs(dir_a, exist_ok=True)
+    os.makedirs(dir_b, exist_ok=True)
+
+    files_a = [os.path.join(dir_a, f'a_{i}.png') for i in range(1, 4)]
+    files_b = [os.path.join(dir_b, f'b_{i}.png') for i in range(1, 2)]
+
+    for f in files_a + files_b:
+        with open(f, 'w') as fp:
+            fp.write('dummy')
+
+    try:
+        # 1. get_folder_groups: 2つ以上のフォルダが存在する場合
+        is_interleaved, groups = get_folder_groups(target_dirs=['folder_test_a', 'folder_test_b'])
+        assert is_interleaved is True
+        assert len(groups) == 2
+        assert len(groups[0]) == 3
+        assert len(groups[1]) == 1
+
+        # 2. interleave_media_groups: 枚数差がある場合の交互配置（A1, B1, A2, A3）
+        interleaved, processed = interleave_media_groups(groups, shuffle=False)
+        assert len(interleaved) == 4
+        assert interleaved[0] == 'folder_test_a/a_1.png'
+        assert interleaved[1] == 'folder_test_b/b_1.png'
+        assert interleaved[2] == 'folder_test_a/a_2.png'
+        assert interleaved[3] == 'folder_test_a/a_3.png'
+
+        # 3. シャッフル有効時のインターリーブ
+        interleaved_shuffled, _ = interleave_media_groups(groups, shuffle=True)
+        assert len(interleaved_shuffled) == 4
+        assert set(interleaved_shuffled) == set(interleaved)
+        # 1枚目はAまたはB、2枚目はもう一方のフォルダの要素
+        first_dir = interleaved_shuffled[0].split('/')[0]
+        second_dir = interleaved_shuffled[1].split('/')[0]
+        assert first_dir != second_dir
+
+        # 4. 単一フォルダ指定時は is_interleaved が False
+        is_single, _ = get_folder_groups(target_dirs=['folder_test_a'])
+        assert is_single is False
+    finally:
+        for f in files_a + files_b:
+            if os.path.exists(f):
+                os.remove(f)
+        if os.path.exists(dir_a):
+            os.rmdir(dir_a)
+        if os.path.exists(dir_b):
+            os.rmdir(dir_b)
+
+
+def test_slideshow_interleave_config_and_view(client):
+    """
+    スライドショー設定でのインターリーブ設定保存およびカスタムスライドショーでのインターリーブ動作テスト
+    """
+    import json
+    img_dir = app.config['UPLOAD_FOLDER']
+
+    # 1. 設定ページの表示確認
+    res_cfg = client.get('/slideshow/config')
+    assert res_cfg.status_code == 200
+    assert 'name="interleave_enabled"' in res_cfg.data.decode('utf-8')
+
+    # 2. 設定の保存
+    res_save = client.post(
+        '/slideshow/config/save',
+        data={'duration': '4000', 'loop_enabled': 'on', 'interleave_enabled': 'on', 'extensions': 'png'},
+        follow_redirects=True
+    )
+    assert res_save.status_code == 200
+    assert app.config['SLIDESHOW_INTERLEAVE'] is True
+
+    # 3. 複数フォルダでのスライドショーリクエスト
+    dir_a = os.path.join(img_dir, 'view_test_a')
+    dir_b = os.path.join(img_dir, 'view_test_b')
+    os.makedirs(dir_a, exist_ok=True)
+    os.makedirs(dir_b, exist_ok=True)
+
+    fa = os.path.join(dir_a, 'img1.png')
+    fb = os.path.join(dir_b, 'img2.png')
+    with open(fa, 'w') as f:
+        f.write('a')
+    with open(fb, 'w') as f:
+        f.write('b')
+
+    try:
+        # interleave=true の場合
+        res_slideshow = client.get('/slideshow?dirs=view_test_a,view_test_b&interleave=true')
+        assert res_slideshow.status_code == 200
+        content = res_slideshow.data.decode('utf-8')
+        assert '"interleave": true' in content
+        assert '"folder_groups":' in content
+
+        # interleave=false で上書きした場合
+        res_normal = client.get('/slideshow?dirs=view_test_a,view_test_b&interleave=false')
+        assert res_normal.status_code == 200
+        content_normal = res_normal.data.decode('utf-8')
+        assert '"interleave": false' in content_normal
+    finally:
+        app.config['SLIDESHOW_INTERLEAVE'] = False
+        if os.path.exists(fa):
+            os.remove(fa)
+        if os.path.exists(fb):
+            os.remove(fb)
+        if os.path.exists(dir_a):
+            os.rmdir(dir_a)
+        if os.path.exists(dir_b):
+            os.rmdir(dir_b)
+
+
+def test_interleave_fallback_when_single_or_no_folders(client):
+    """
+    フォルダが1つしかない、または画像ファイルのみで複数フォルダが存在しない場合の通常スライドショーへのフォールバックテスト
+    """
+    img_dir = app.config['UPLOAD_FOLDER']
+    dir_single = os.path.join(img_dir, 'single_folder')
+    os.makedirs(dir_single, exist_ok=True)
+    f1 = os.path.join(dir_single, 'file1.png')
+    f2 = os.path.join(dir_single, 'file2.png')
+    with open(f1, 'w') as fp:
+        fp.write('1')
+    with open(f2, 'w') as fp:
+        fp.write('2')
+
+    try:
+        # フォルダが1つのみで interleave=true をリクエスト
+        res = client.get('/slideshow?dirs=single_folder&interleave=true')
+        assert res.status_code == 200
+        content = res.data.decode('utf-8')
+        # 複数フォルダが存在しないため interleave は false にフォールバック
+        assert '"interleave": false' in content
+    finally:
+        if os.path.exists(f1):
+            os.remove(f1)
+        if os.path.exists(f2):
+            os.remove(f2)
+        if os.path.exists(dir_single):
+            os.rmdir(dir_single)
+
